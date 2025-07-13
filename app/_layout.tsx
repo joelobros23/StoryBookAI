@@ -1,6 +1,13 @@
 import { Slot, useRouter, useSegments } from 'expo-router';
 import React, { useEffect } from 'react';
-import { Platform, SafeAreaView, StatusBar, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator, // ADD THIS IMPORT
+  Platform,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  View
+} from 'react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 
 const InitialLayout = () => {
@@ -8,19 +15,33 @@ const InitialLayout = () => {
   const segments = useSegments();
   const router = useRouter();
 
-  useEffect(() => {
-    if (isLoading) return;
-    
-    const inAuthGroup = segments[0] === 'login';
-    
-    if (user && inAuthGroup) {
-      router.replace('/'); // Redirect to root
-    } else if (!user && !inAuthGroup) {
-      router.replace('/login');
+useEffect(() => {
+  if (isLoading) return;
+  
+  const inAuthGroup = segments[0] === 'login';
+  
+  if (user) {
+    // Redirect to home if in auth group
+    if (inAuthGroup) {
+      router.replace('./tabs/index');
     }
-  }, [user, isLoading, segments]);
+  } else if (!inAuthGroup) {
+    router.replace('/login');
+  }
 
-  return isLoading ? <View /> : <Slot />;
+    console.log(`Auth Check: 
+    User: ${user ? "Logged In" : "Guest"}, 
+    Route: ${segments.join('/') || 'root'}
+  `);
+}, [user, isLoading, segments]);
+
+ return isLoading ? (
+  <View style={styles.loadingContainer}>
+    <ActivityIndicator size="large" color="#6200ee" />
+  </View>
+) : (
+  <Slot />
+);
 };
 
 export default function RootLayout() {
@@ -39,5 +60,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+    loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#121212',
   },
 });

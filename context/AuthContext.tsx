@@ -17,19 +17,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const currentUser = await account.get();
-        setUser(currentUser);
-      } catch (error) {
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    checkSession();
-  }, []);
+useEffect(() => {
+  let isMounted = true;
+  const checkSession = async () => {
+    try {
+      const currentUser = await account.get();
+      if (isMounted) setUser(currentUser);
+    } catch {
+      if (isMounted) setUser(null);
+    } finally {
+      if (isMounted) setIsLoading(false);
+    }
+  };
+  checkSession();
+  return () => { isMounted = false };
+}, []);
 
   // Add explicit types to the function implementation parameters
 const login = async (email: string, password: string) => {
