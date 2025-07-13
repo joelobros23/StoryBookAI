@@ -9,14 +9,16 @@ type PlayButtonModalProps = {
   onClose: () => void;
 };
 
+// Define a type for our navigation paths for type safety
+type AppPath = '/create-story' | '/my-stories';
+
 // Apply the props type to the component
 const PlayButtonModal = ({ visible, onClose }: PlayButtonModalProps) => {
   const router = useRouter();
-  const handleNavigate = (path: string) => {
+  const handleNavigate = (path: AppPath) => {
     onClose();
-    console.log(`Navigating to ${path}`);
-    // We can implement the actual navigation later
-    // router.push(path);
+    // *** CHANGE IS HERE: Use the router to navigate with a typed path ***
+    router.push(path);
   };
   return (
     <Modal animationType="slide" transparent={true} visible={visible} onRequestClose={onClose}>
