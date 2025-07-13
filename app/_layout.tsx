@@ -21,18 +21,13 @@ useEffect(() => {
   const inAuthGroup = segments[0] === 'login';
   
   if (user) {
-    // Redirect to home if in auth group
+    // FIX: Use absolute path instead of relative
     if (inAuthGroup) {
-      router.replace('./tabs/index');
+      router.replace('/tabs'); // Changed from './tabs/index'
     }
   } else if (!inAuthGroup) {
     router.replace('/login');
   }
-
-    console.log(`Auth Check: 
-    User: ${user ? "Logged In" : "Guest"}, 
-    Route: ${segments.join('/') || 'root'}
-  `);
 }, [user, isLoading, segments]);
 
  return isLoading ? (

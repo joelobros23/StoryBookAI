@@ -12,7 +12,7 @@ type PlayButtonModalProps = {
 // Apply the props type to the component
 const PlayButtonModal = ({ visible, onClose }: PlayButtonModalProps) => {
   const router = useRouter();
-  const handleNavigate = (path) => {
+  const handleNavigate = (path: string) => {
     onClose();
     console.log(`Navigating to ${path}`);
   };

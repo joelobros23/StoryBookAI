@@ -43,7 +43,7 @@ const login = async (email: string, password: string) => {
     await account.createEmailPasswordSession(email, password);
     const currentUser = await account.get();
     setUser(currentUser);
-  } catch (error) {
+  } catch (error: any) {
     throw new Error(error.message);
   }
 };
