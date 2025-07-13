@@ -15,6 +15,8 @@ const PlayButtonModal = ({ visible, onClose }: PlayButtonModalProps) => {
   const handleNavigate = (path: string) => {
     onClose();
     console.log(`Navigating to ${path}`);
+    // We can implement the actual navigation later
+    // router.push(path);
   };
   return (
     <Modal animationType="slide" transparent={true} visible={visible} onRequestClose={onClose}>
@@ -39,7 +41,6 @@ const PlayButtonModal = ({ visible, onClose }: PlayButtonModalProps) => {
   );
 };
 
-// Replace the entire TabsLayout component with this:
 export default function TabsLayout() {
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -69,21 +70,23 @@ export default function TabsLayout() {
           name="play"
           options={{
             title: 'Play',
-            tabBarIcon: () => (
-              <View style={styles.playButtonContainer}>
-                <Feather name="play" size={32} color="#FFFFFF" style={{ marginLeft: 4 }}/>
-              </View>
-            ),
-            tabBarLabel: () => null,
+            tabBarIcon: ({ color }) => <Feather name="play" size={28} color={color} />,
           }}
           listeners={{
             tabPress: (e) => {
+              // Prevent default navigation and open the modal instead
               e.preventDefault();
               setModalVisible(true);
             },
           }}
         />
-        <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ color }) => <Feather name="user" size={28} color={color} /> }} />
+        <Tabs.Screen 
+          name="profile" 
+          options={{ 
+            title: 'Profile', 
+            tabBarIcon: ({ color }) => <Feather name="user" size={28} color={color} /> 
+          }} 
+        />
       </Tabs>
       <PlayButtonModal visible={modalVisible} onClose={() => setModalVisible(false)} />
     </>
@@ -91,22 +94,7 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-    playButtonContainer: {
-        backgroundColor: '#6200ee',
-        width: 70,
-        height: 70,
-        borderRadius: 35,
-        justifyContent: 'center',
-        alignItems: 'center',
-        bottom: 30,
-        borderColor: '#121212',
-        borderWidth: 4,
-        shadowColor: "#6200ee",
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.5,
-        shadowRadius: 8,
-        elevation: 10,
-    },
+    // The floating playButtonContainer style has been removed.
     modalOverlay: {
         flex: 1,
         justifyContent: 'flex-end',
