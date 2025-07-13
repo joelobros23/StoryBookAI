@@ -2,14 +2,25 @@ import { Feather } from '@expo/vector-icons';
 import { Models } from 'appwrite';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    LayoutChangeEvent,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 
 // --- Gemini API Configuration ---
 const API_KEY = ""; // Use your Gemini API Key here.
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
-
 
 // --- Type Definitions ---
 type StoryDocument = Models.Document & {
@@ -39,7 +50,9 @@ export default function PlayStoryScreen() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const scrollViewRef = useRef<ScrollView>(null);
-
+    const insets = useSafeAreaInsets();
+    const [headerHeight, setHeaderHeight] = useState(0);
+    
     // --- State Management ---
     const [story, setStory] = useState<StoryDocument | null>(null);
     const [storyContent, setStoryContent] = useState<StoryEntry[]>([]);
@@ -78,7 +91,9 @@ export default function PlayStoryScreen() {
     
     // --- Auto-scroll Effect ---
     useEffect(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
+        if (storyContent.length > 1) {
+           setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+        }
     }, [storyContent]);
 
     // --- AI Interaction Logic ---
@@ -158,7 +173,12 @@ export default function PlayStoryScreen() {
         if (error) return <Text style={[styles.storyText, styles.centered, { color: '#ff6b6b' }]}>{error}</Text>;
 
         return (
-            <ScrollView ref={scrollViewRef} contentContainerStyle={styles.storyContainer}>
+            <ScrollView 
+                ref={scrollViewRef} 
+                style={styles.storyScrollView} 
+                contentContainerStyle={styles.storyContainer}
+                keyboardDismissMode="interactive"
+            >
                 {storyContent.map((entry, index) => (
                     <Text key={index} style={[styles.storyText, entry.type === 'user' && styles.userText]}>
                         {entry.text}
@@ -172,7 +192,7 @@ export default function PlayStoryScreen() {
     const renderInputArea = () => {
         if (isTakingTurn) {
             return (
-                <View>
+                <View style={styles.inputAreaContainer}>
                     <View style={styles.modeSelectorBar}>
                         {isSelectingMode ? (
                             <>
@@ -224,26 +244,34 @@ export default function PlayStoryScreen() {
         );
     };
 
+    const handleHeaderLayout = (event: LayoutChangeEvent) => {
+        const { height } = event.nativeEvent.layout;
+        setHeaderHeight(height);
+    };
+
     return (
         <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+            <View style={[styles.header, { paddingTop: insets.top }]} onLayout={handleHeaderLayout}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isAiThinking}>
+                    <Feather name="chevron-left" size={28} color="#FFFFFF" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle} numberOfLines={1}>
+                    {isLoading ? 'Loading...' : story?.title || 'Story'}
+                </Text>
+                 <TouchableOpacity style={styles.settingsButton} disabled={isAiThinking}>
+                    <Feather name="settings" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+            </View>
+            
             <KeyboardAvoidingView 
-                style={styles.flexContainer} 
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={styles.flexContainer}
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                keyboardVerticalOffset={headerHeight}
             >
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isAiThinking}>
-                        <Feather name="chevron-left" size={28} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle} numberOfLines={1}>
-                        {isLoading ? 'Loading...' : story?.title || 'Story'}
-                    </Text>
-                     <TouchableOpacity style={styles.settingsButton} disabled={isAiThinking}>
-                        <Feather name="settings" size={24} color="#FFFFFF" />
-                    </TouchableOpacity>
-                </View>
                 <View style={styles.flexContainer}>
                     {renderContent()}
                 </View>
+                
                 <View style={styles.inputWrapper}>
                     {renderInputArea()}
                 </View>
@@ -283,9 +311,13 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginHorizontal: 10,
     },
+    storyScrollView: {
+        flex: 1,
+    },
     storyContainer: {
         flexGrow: 1,
         padding: 20,
+        paddingBottom: 10,
     },
     centered: {
         flex: 1,
@@ -307,6 +339,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#1e1e1e',
         borderTopWidth: 1,
         borderTopColor: '#333',
+    },
+    inputAreaContainer: {
+        paddingBottom: 10,
     },
     modeSelectorBar: {
         flexDirection: 'row',
@@ -337,18 +372,19 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         borderRadius: 20,
         paddingHorizontal: 15,
-        paddingVertical: 10,
+        paddingVertical: 12,
         fontSize: 16,
         marginRight: 10,
+        minHeight: 50,
     },
     sendButton: {
-        padding: 5,
+        padding: 8,
     },
     actionBar: {
         flexDirection: 'row',
         justifyContent: 'space-around',
         alignItems: 'center',
-        paddingVertical: 10,
+        paddingVertical: 12,
     },
     actionButton: {
         alignItems: 'center',
