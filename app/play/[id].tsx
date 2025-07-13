@@ -5,9 +5,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    KeyboardAvoidingView,
+    Keyboard,
     LayoutChangeEvent,
-    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -15,11 +14,10 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
-
 // --- Gemini API Configuration ---
-const API_KEY = ""; // Use your Gemini API Key here.
+const API_KEY = "AIzaSyAhz-vMTfd4NjDreB-qz0mjGVBVYvNon00"; // Use your Gemini API Key here.
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
 // --- Type Definitions ---
@@ -47,12 +45,11 @@ const ActionButton = ({ icon, label, onPress, disabled = false }) => (
 );
 
 export default function PlayStoryScreen() {
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
     const { id } = useLocalSearchParams();
     const router = useRouter();
     const scrollViewRef = useRef<ScrollView>(null);
-    const insets = useSafeAreaInsets();
     const [headerHeight, setHeaderHeight] = useState(0);
-    
     // --- State Management ---
     const [story, setStory] = useState<StoryDocument | null>(null);
     const [storyContent, setStoryContent] = useState<StoryEntry[]>([]);
@@ -63,7 +60,31 @@ export default function PlayStoryScreen() {
     const [inputMode, setInputMode] = useState<InputMode>('Do');
     const [isSelectingMode, setIsSelectingMode] = useState(false);
     const [error, setError] = useState<string | null>(null);
+const handleHeaderLayout = (event: LayoutChangeEvent) => {
+        const { height } = event.nativeEvent.layout;
+        setHeaderHeight(height);
+    };
 
+        useEffect(() => {
+        const keyboardDidShowListener = Keyboard.addListener(
+            'keyboardDidShow',
+            (e) => {
+                setKeyboardHeight(e.endCoordinates.height);
+            }
+        );
+        
+        const keyboardDidHideListener = Keyboard.addListener(
+            'keyboardDidHide',
+            () => {
+                setKeyboardHeight(0);
+            }
+        );
+        
+        return () => {
+            keyboardDidShowListener.remove();
+            keyboardDidHideListener.remove();
+        };
+    }, []);
     // --- Data Fetching Effect ---
     useEffect(() => {
         const fetchStory = async () => {
@@ -113,7 +134,7 @@ export default function PlayStoryScreen() {
         try {
             const payload = {
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { maxOutputTokens: 2000, temperature: 0.8, topP: 0.9 }
+                generationConfig: { maxOutputTokens: 150, temperature: 0.8, topP: 0.9 }
             };
             const response = await fetch(API_URL, {
                 method: 'POST',
@@ -244,38 +265,48 @@ export default function PlayStoryScreen() {
         );
     };
 
-    const handleHeaderLayout = (event: LayoutChangeEvent) => {
-        const { height } = event.nativeEvent.layout;
-        setHeaderHeight(height);
-    };
-
-    return (
-        <SafeAreaView style={styles.container} edges={['bottom']}>
-            <View style={styles.header} onLayout={handleHeaderLayout}>
+        return (
+        <SafeAreaView 
+            style={styles.container} 
+            edges={['bottom']} // Only handle bottom safe area
+        >
+            {/* Header without extra padding */}
+            <View 
+                style={styles.header}
+                onLayout={handleHeaderLayout}
+            >
+                {/* Back button */}
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isAiThinking}>
                     <Feather name="chevron-left" size={28} color="#FFFFFF" />
                 </TouchableOpacity>
+                
+                {/* Title */}
                 <Text style={styles.headerTitle} numberOfLines={1}>
                     {isLoading ? 'Loading...' : story?.title || 'Story'}
                 </Text>
-                 <TouchableOpacity style={styles.settingsButton} disabled={isAiThinking}>
+                
+                {/* Settings button */}
+                <TouchableOpacity style={styles.settingsButton} disabled={isAiThinking}>
                     <Feather name="settings" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
             </View>
             
-            <KeyboardAvoidingView 
-                style={styles.flexContainer}
-                behavior={Platform.OS === "ios" ? "padding" : undefined}
-                keyboardVerticalOffset={headerHeight}
-            >
-                <View style={styles.flexContainer}>
+            {/* Updated KeyboardAvoidingView without offset */}
+            <View style={styles.flexContainer}>
+                <ScrollView 
+                    ref={scrollViewRef}
+                    style={styles.flexContainer}
+                    contentContainerStyle={styles.storyContainer}
+                    keyboardDismissMode="interactive"
+                >
                     {renderContent()}
-                </View>
+                </ScrollView>
                 
-                <View style={styles.inputWrapper}>
+                {/* Input area with keyboard padding */}
+                <View style={[styles.inputWrapper, { paddingBottom: keyboardHeight }]}>
                     {renderInputArea()}
                 </View>
-            </KeyboardAvoidingView>
+            </View>
         </SafeAreaView>
     );
 }
@@ -292,11 +323,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 10,
-        paddingVertical: 10,
+        paddingHorizontal: 16,
+        paddingVertical: 12, // Normal vertical padding
         borderBottomWidth: 1,
         borderBottomColor: '#333',
-        // Removed explicit paddingTop
     },
     backButton: {
         padding: 5,
@@ -304,14 +334,11 @@ const styles = StyleSheet.create({
     settingsButton: {
         padding: 5,
     },
-    headerTitle: {
-        color: '#FFFFFF',
-        fontSize: 18,
-        fontWeight: 'bold',
-        flex: 1,
-        textAlign: 'center',
-        marginHorizontal: 10,
-    },
+    headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#FFFFFF' },
+  messageList: { flex: 1, paddingHorizontal: 10 },
+  messageContainer: {
+    marginVertical: 5,
+  },
     storyScrollView: {
         flex: 1,
     },
