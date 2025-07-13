@@ -250,8 +250,8 @@ export default function PlayStoryScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-            <View style={[styles.header, { paddingTop: insets.top }]} onLayout={handleHeaderLayout}>
+        <SafeAreaView style={styles.container} edges={['bottom']}>
+            <View style={styles.header} onLayout={handleHeaderLayout}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isAiThinking}>
                     <Feather name="chevron-left" size={28} color="#FFFFFF" />
                 </TouchableOpacity>
@@ -296,6 +296,7 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         borderBottomWidth: 1,
         borderBottomColor: '#333',
+        // Removed explicit paddingTop
     },
     backButton: {
         padding: 5,
