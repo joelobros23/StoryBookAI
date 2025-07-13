@@ -34,4 +34,6 @@ export type StoryEntry = {
 export type StorySession = {
     story: StoryDocument;
     content: StoryEntry[];
+    sessionId: string; // FIX: Added missing property
+    sessionDate: string; // FIX: Added missing property
 };

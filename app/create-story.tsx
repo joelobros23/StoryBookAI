@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import { Models } from 'appwrite'; // FIX: Added missing import
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -14,8 +15,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { databaseId, databases, ID, storiesCollectionId } from '../lib/appwrite';
-import { addStoryToHistory } from '../lib/history';
-import { StoryDocument } from './types/story'; // Import the shared StoryDocument type
+import { StoryDocument } from './types/story'; // FIX: Corrected import path
 
 // Define prop types for FormInput
 type FormInputProps = {
@@ -66,7 +66,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, value, onValueChange
 
 export default function CreateStoryScreen() {
   const router = useRouter();
-  const { user } = useAuth(); // Get the authenticated user
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('Details');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -97,7 +97,7 @@ export default function CreateStoryScreen() {
 
     setIsLoading(true);
 
-    const storyData = {
+    const storyData: Omit<StoryDocument, keyof Models.Document> = {
         title,
         description,
         tags,
@@ -119,15 +119,12 @@ export default function CreateStoryScreen() {
             storyData
         );
         
-        // Use the correct, full type for the history function
-        await addStoryToHistory(newStoryDocument as StoryDocument);
-
         Alert.alert("Success!", "Your story has been created.");
         
-        // Use the correct object syntax for typed routes
-        router.push({
-            pathname: '/play/[id]',
-            params: { id: newStoryDocument.$id, story: JSON.stringify(newStoryDocument) }
+        // FIX: Use the correct object syntax for typed routes
+        router.replace({
+            pathname: '/story-info/[id]',
+            params: { id: newStoryDocument.$id }
         });
 
     } catch (error: any) {

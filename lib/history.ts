@@ -1,39 +1,33 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
 import { StoryDocument, StoryEntry, StorySession } from '../app/types/story';
+import { ID } from './appwrite'; // Import ID for unique session IDs
 
 const HISTORY_KEY = 'story_history';
 
 /**
  * Retrieves the list of all story sessions from local history.
- * This is now more robust and filters out any malformed entries.
- * @returns An array of story sessions.
  */
 export const getStoryHistory = async (): Promise<StorySession[]> => {
     try {
         const jsonValue = await AsyncStorage.getItem(HISTORY_KEY);
         if (jsonValue != null) {
             const parsed = JSON.parse(jsonValue);
-            // Filter out any entries that are not valid sessions
-            return Array.isArray(parsed) ? parsed.filter(item => item && item.story && item.story.$id) : [];
+            return Array.isArray(parsed) ? parsed.filter(item => item && item.story && item.story.$id && item.sessionId) : [];
         }
         return [];
     } catch (e) {
         console.error("Failed to load story history.", e);
-        Alert.alert("Error", "Could not load your story history.");
         return [];
     }
 };
 
 /**
- * Retrieves a single story session, including its chat content.
- * @param storyId The ID of the story to retrieve.
- * @returns A story session object or null if not found.
+ * Retrieves a single story session by its unique session ID.
  */
-export const getStorySession = async (storyId: string): Promise<StorySession | null> => {
+export const getStorySession = async (sessionId: string): Promise<StorySession | null> => {
     try {
         const history = await getStoryHistory();
-        const session = history.find(s => s.story.$id === storyId);
+        const session = history.find(s => s.sessionId === sessionId);
         return session || null;
     } catch (e) {
         console.error("Failed to get story session.", e);
@@ -41,48 +35,36 @@ export const getStorySession = async (storyId: string): Promise<StorySession | n
     }
 };
 
-
 /**
- * Adds a new story to the local history.
- * It avoids adding duplicate stories.
- * @param newStory - The story document to add.
+ * Creates a new, unique session for a story and saves it.
+ * @param story - The base story document.
+ * @returns The newly created session.
  */
-export const addStoryToHistory = async (newStory: StoryDocument) => {
-    try {
-        const existingHistory = await getStoryHistory();
-        const isAlreadyInHistory = existingHistory.some(session => session.story.$id === newStory.$id);
-        
-        if (!isAlreadyInHistory) {
-            const newSession: StorySession = {
-                story: newStory,
-                content: [], // Start with empty chat history
-            };
-            const updatedHistory = [newSession, ...existingHistory];
-            const jsonValue = JSON.stringify(updatedHistory);
-            await AsyncStorage.setItem(HISTORY_KEY, jsonValue);
-        }
-    } catch (e) {
-        console.error("Failed to save story to history.", e);
-        Alert.alert("Error", "Could not save this story to your history.");
-    }
+export const createNewSession = async (story: StoryDocument): Promise<StorySession> => {
+    const history = await getStoryHistory();
+    const newSession: StorySession = {
+        story: story,
+        content: [],
+        sessionId: ID.unique(), // Generate a unique ID for this new session
+        sessionDate: new Date().toISOString(), // Add a timestamp
+    };
+    const updatedHistory = [newSession, ...history];
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+    return newSession;
 };
 
 /**
  * Saves the current chat content for a specific story session.
- * @param storyId The ID of the story being played.
- * @param content The array of story entries (the chat).
  */
-export const saveStorySessionContent = async (storyId: string, content: StoryEntry[]) => {
+export const saveStorySessionContent = async (sessionId: string, content: StoryEntry[]) => {
     try {
         const history = await getStoryHistory();
-        const sessionIndex = history.findIndex(s => s.story.$id === storyId);
+        const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
 
         if (sessionIndex !== -1) {
-            // Update the content of the specific session
-            // Make sure not to save the 'isNew' flag
             history[sessionIndex].content = content.map(({isNew, ...rest}) => rest);
-            const jsonValue = JSON.stringify(history);
-            await AsyncStorage.setItem(HISTORY_KEY, jsonValue);
+            history[sessionIndex].sessionDate = new Date().toISOString(); // Update timestamp on save
+            await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
         }
     } catch (e) {
         console.error("Failed to save session content.", e);
