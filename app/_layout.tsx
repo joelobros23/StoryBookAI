@@ -1,6 +1,6 @@
 import { Slot, useRouter, useSegments } from 'expo-router';
 import React, { useEffect } from 'react';
-import { Platform, SafeAreaView, StatusBar, StyleSheet } from 'react-native';
+import { Platform, SafeAreaView, StatusBar, StyleSheet, View } from 'react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 
 const InitialLayout = () => {
@@ -9,25 +9,18 @@ const InitialLayout = () => {
   const router = useRouter();
 
   useEffect(() => {
-    // Wait for the auth state to load
     if (isLoading) return;
-
-    const inTabsGroup = segments[0] === '(tabs)';
-
-    // If the user is not signed in and is trying to access a protected route,
-    // redirect them to the login page.
-    if (!user && inTabsGroup) {
+    
+    const inAuthGroup = segments[0] === 'login';
+    
+    if (user && inAuthGroup) {
+      router.replace('/'); // Redirect to root
+    } else if (!user && !inAuthGroup) {
       router.replace('/login');
-    } 
-    // If the user is signed in and is on a page outside the main tabs (e.g., login),
-    // redirect them to the home page inside the tabs group.
-    else if (user && !inTabsGroup) {
-      // Corrected the path to be more explicit and type-safe.
-      router.replace('/(tabs)/index');
     }
   }, [user, isLoading, segments]);
 
-  return <Slot />;
+  return isLoading ? <View /> : <Slot />;
 };
 
 export default function RootLayout() {

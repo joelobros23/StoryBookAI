@@ -1,8 +1,7 @@
 import { Feather } from '@expo/vector-icons';
-import { Tabs, useRouter, useSegments } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { Tabs, useRouter } from 'expo-router';
+import React, { useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
 
 // Define props type for the modal component
 type PlayButtonModalProps = {
@@ -40,24 +39,9 @@ const PlayButtonModal = ({ visible, onClose }: PlayButtonModalProps) => {
   );
 };
 
+// Replace the entire TabsLayout component with this:
 export default function TabsLayout() {
-  const { user, isLoading } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
   const [modalVisible, setModalVisible] = useState(false);
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.replace('/login');
-    }
-    else if (user && segments[0] === 'login') {
-        router.replace('/(tabs)/');
-    }
-  }, [user, isLoading, segments]);
-
-  if (isLoading) {
-    return null;
-  }
 
   return (
     <>

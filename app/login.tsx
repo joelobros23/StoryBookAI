@@ -13,25 +13,34 @@ export default function LoginScreen() {
   const { login, register } = useAuth();
   const router = useRouter();
 
-  const handleAuthAction = async () => {
-    if (!email || !password || (isRegistering && !name)) {
-      Alert.alert('Error', 'Please fill in all fields.');
-      return;
+const handleAuthAction = async () => {
+  if (!email || !password || (isRegistering && !name)) {
+    Alert.alert('Error', 'Please fill in all fields.');
+    return;
+  }
+  setIsLoading(true);
+  try {
+    if (isRegistering) {
+      await register(email, password, name);
+    } else {
+      await login(email, password);
     }
-    setIsLoading(true);
-    try {
-      if (isRegistering) {
-        await register(email, password, name);
-      } else {
-        await login(email, password);
-      }
-      // The router redirect will be handled by the layout
-    } catch (error: any) {
+    // REMOVED THE REDIRECT HERE
+  } catch (error: any) {
+    if (error.message.includes('session is active')) {
+      // Special handling for session conflict
+      Alert.alert(
+        'Session Conflict', 
+        'You are already logged in. Redirecting to home...',
+        [{ text: 'OK' }] // Removed onPress handler
+      );
+    } else {
       Alert.alert('Authentication Error', error.message);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <View style={styles.container}>

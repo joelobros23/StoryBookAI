@@ -32,12 +32,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Add explicit types to the function implementation parameters
-  const login = async (email: string, password: string) => {
-    const session = await account.createEmailPasswordSession(email, password);
+const login = async (email: string, password: string) => {
+  try {
+    // Clear any existing session first
+    await logout();
+    
+    // Create new session
+    await account.createEmailPasswordSession(email, password);
     const currentUser = await account.get();
     setUser(currentUser);
-    return session;
-  };
+  } catch (error) {
+    throw new Error(error.message);
+  }
+};
 
   // Add explicit types to the function implementation parameters
   const register = async (email: string, password: string, name: string) => {
@@ -45,10 +52,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return login(email, password);
   };
 
-  const logout = async () => {
-    await account.deleteSession('current');
+const logout = async () => {
+  try {
+    if (user) {
+      await account.deleteSession('current');
+    }
     setUser(null);
-  };
+  } catch (error) {
+    console.error('Logout error:', error);
+  }
+};
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
