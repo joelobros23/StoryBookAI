@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 import { generateStoryContinuation as generateAiResponse } from '../../lib/gemini';
+import { getStorySession, saveStorySessionContent } from '../../lib/history';
 
 // --- Type Definitions ---
 type StoryDocument = Models.Document & {
@@ -36,43 +37,23 @@ type InputMode = 'Do' | 'Say' | 'Story';
 
 // --- Components ---
 
-/**
- * A component to render text with markdown-like formatting (**bold**, *italic*)
- * and underline new AI-generated content.
- */
 const FormattedText = ({ text, style, isNew = false }: { text: string; style: any; isNew?: boolean }) => {
-    // Regex to find **bold** and *italic* text, and split the string by them.
     const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g).filter(Boolean);
-
-    const textStyle = [style];
-    if (isNew) {
-        // Apply underline style only to new AI text
-        textStyle.push(styles.newlyGeneratedText);
-    }
-
+    const textStyle = [style, isNew && styles.newlyGeneratedText];
     return (
         <Text style={textStyle}>
             {parts.map((part, index) => {
                 if (part.startsWith('**') && part.endsWith('**')) {
-                    return (
-                        <Text key={index} style={styles.boldText}>
-                            {part.slice(2, -2)}
-                        </Text>
-                    );
+                    return <Text key={index} style={styles.boldText}>{part.slice(2, -2)}</Text>;
                 }
                 if (part.startsWith('*') && part.endsWith('*')) {
-                    return (
-                        <Text key={index} style={styles.italicText}>
-                            {part.slice(1, -1)}
-                        </Text>
-                    );
+                    return <Text key={index} style={styles.italicText}>{part.slice(1, -1)}</Text>;
                 }
-                return part; // Regular text
+                return part;
             })}
         </Text>
     );
 };
-
 
 const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; disabled?: boolean }) => (
     <TouchableOpacity style={[styles.actionButton, disabled && styles.disabledButton]} onPress={onPress} disabled={disabled}>
@@ -104,20 +85,8 @@ export default function PlayStoryScreen() {
     };
 
     useEffect(() => {
-        const keyboardDidShowListener = Keyboard.addListener(
-            'keyboardDidShow',
-            (e) => {
-                setKeyboardHeight(e.endCoordinates.height);
-            }
-        );
-        
-        const keyboardDidHideListener = Keyboard.addListener(
-            'keyboardDidHide',
-            () => {
-                setKeyboardHeight(0);
-            }
-        );
-        
+        const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
+        const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
         return () => {
             keyboardDidShowListener.remove();
             keyboardDidHideListener.remove();
@@ -127,7 +96,28 @@ export default function PlayStoryScreen() {
     // --- Data Loading Effect ---
     useEffect(() => {
         const loadStory = async () => {
-            // Priority 1: Use story data passed via params (the "local copy")
+            if (!id) {
+                setError("Invalid Story ID.");
+                setIsLoading(false);
+                return;
+            }
+
+            // Check for a saved session in local history first
+            const savedSession = await getStorySession(id);
+            if (savedSession) {
+                setStory(savedSession.story as StoryDocument);
+                // If there's saved content, use it. Otherwise, use the opening text.
+                if (savedSession.content && savedSession.content.length > 0) {
+                    setStoryContent(savedSession.content);
+                } else if (savedSession.story.opening) {
+                    setStoryContent([{ type: 'ai', text: savedSession.story.opening, isNew: true }]);
+                }
+                setIsLoading(false);
+                return;
+            }
+
+            // Fallback for stories not yet in history (e.g., from deep link)
+            // Or if passed directly from creation screen
             if (storyString) {
                 try {
                     const storyData = JSON.parse(storyString) as StoryDocument;
@@ -136,19 +126,13 @@ export default function PlayStoryScreen() {
                         setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
                     }
                     setIsLoading(false);
-                    return; // Exit after loading from params
+                    return;
                 } catch (e) {
                     console.error("Failed to parse story data from params", e);
-                    // Fallback to fetching if parsing fails
                 }
             }
 
-            // Priority 2: Fetch from database if no local copy is found
-            if (!id) {
-                setError("Invalid Story ID.");
-                setIsLoading(false);
-                return;
-            }
+            // Final fallback: fetch from the database
             try {
                 const response = await databases.getDocument(databaseId, storiesCollectionId, id);
                 const fetchedStory = response as StoryDocument;
@@ -166,27 +150,27 @@ export default function PlayStoryScreen() {
         loadStory();
     }, [id, storyString]);
     
-    // --- Auto-scroll Effect ---
+    // --- Auto-scroll and Save History Effect ---
     useEffect(() => {
-        if (storyContent.length > 1) {
-           setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+        if (storyContent.length > 0 && id) {
+            saveStorySessionContent(id, storyContent);
+            if (storyContent.length > 1) {
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+            }
         }
-    }, [storyContent]);
+    }, [storyContent, id]);
 
     // --- AI Interaction Logic ---
     const handleGenerateStoryContinuation = async (currentHistory: StoryEntry[], action?: string) => {
         if (!story) return;
         setIsAiThinking(true);
-
         const aiText = await generateAiResponse(story, currentHistory, action);
-
         if (aiText) {
             setStoryContent(prev => {
                 const oldContent = prev.map(entry => ({ ...entry, isNew: false }));
                 return [...oldContent, { type: 'ai', text: aiText, isNew: true }];
             });
         }
-        
         setIsAiThinking(false);
     };
 
@@ -232,7 +216,6 @@ export default function PlayStoryScreen() {
     const renderContent = () => {
         if (isLoading) return <ActivityIndicator size="large" color="#c792ea" style={styles.centered} />;
         if (error) return <Text style={[styles.storyText, styles.centered, { color: '#ff6b6b' }]}>{error}</Text>;
-
         return (
             <>
                 {storyContent.map((entry, index) => (
@@ -316,11 +299,9 @@ export default function PlayStoryScreen() {
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isAiThinking}>
                     <Feather name="chevron-left" size={28} color="#FFFFFF" />
                 </TouchableOpacity>
-                
                 <Text style={styles.headerTitle} numberOfLines={1}>
                     {isLoading ? 'Loading...' : story?.title || 'Story'}
                 </Text>
-                
                 <TouchableOpacity style={styles.settingsButton} disabled={isAiThinking}>
                     <Feather name="settings" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
