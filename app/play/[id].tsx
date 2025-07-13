@@ -15,8 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 import { generateStoryContinuation as generateAiResponse } from '../../lib/gemini';
-import { getStorySession, saveStorySessionContent } from '../../lib/history';
-import { StoryDocument, StoryEntry } from '../types/story'; // Import shared types
+import { addStoryToHistory, getStorySession, saveStorySessionContent } from '../../lib/history';
+import { StoryDocument, StoryEntry } from '../types/story';
 
 type InputMode = 'Do' | 'Say' | 'Story';
 
@@ -87,39 +87,42 @@ export default function PlayStoryScreen() {
                 return;
             }
 
-            // Check for a saved session in local history first
-            const savedSession = await getStorySession(id);
-            if (savedSession) {
-                setStory(savedSession.story); // No need to cast, types now match
-                if (savedSession.content && savedSession.content.length > 0) {
-                    setStoryContent(savedSession.content);
-                } else if (savedSession.story.opening) {
-                    setStoryContent([{ type: 'ai', text: savedSession.story.opening, isNew: true }]);
-                }
-                setIsLoading(false);
-                return;
-            }
-
+            // **FIX:** The logic is now correctly separated to handle all cases.
+            
+            // Case 1: Resuming from History tab or starting a new story from Create screen.
+            // In both cases, `storyString` will be present.
             if (storyString) {
                 try {
                     const storyData = JSON.parse(storyString) as StoryDocument;
                     setStory(storyData);
-                    if (storyData.opening) {
+                    
+                    const savedSession = await getStorySession(id);
+                    if (savedSession && savedSession.content.length > 0) {
+                        // Found saved chat history, load it.
+                        setStoryContent(savedSession.content);
+                    } else if (storyData.opening) {
+                        // No saved chat history, start with the opening text.
                         setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
                     }
-                    setIsLoading(false);
-                    return;
                 } catch (e) {
                     console.error("Failed to parse story data from params", e);
+                    setError("Could not load the story data.");
+                } finally {
+                    setIsLoading(false);
                 }
+                return;
             }
 
+            // Case 2: Starting a fresh session from the Creations tab.
+            // `storyString` is undefined, so we fetch from the database.
             try {
-                const response = await databases.getDocument(databaseId, storiesCollectionId, id);
-                setStory(response as StoryDocument);
-                if (response.opening) {
-                    setStoryContent([{ type: 'ai', text: response.opening, isNew: true }]);
+                const fetchedStory = await databases.getDocument(databaseId, storiesCollectionId, id) as StoryDocument;
+                setStory(fetchedStory);
+                if (fetchedStory.opening) {
+                    setStoryContent([{ type: 'ai', text: fetchedStory.opening, isNew: true }]);
                 }
+                // Add to local history so future progress can be saved.
+                await addStoryToHistory(fetchedStory);
             } catch (err: any) {
                 console.error("Failed to fetch story:", err);
                 setError("Could not load the story. Please try again later.");
@@ -132,13 +135,13 @@ export default function PlayStoryScreen() {
     
     // --- Auto-scroll and Save History Effect ---
     useEffect(() => {
-        if (storyContent.length > 0 && id) {
+        if (storyContent.length > 0 && id && story) {
             saveStorySessionContent(id, storyContent);
             if (storyContent.length > 1) {
                 setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
             }
         }
-    }, [storyContent, id]);
+    }, [storyContent, id, story]);
 
     // --- AI Interaction Logic ---
     const handleGenerateStoryContinuation = async (currentHistory: StoryEntry[], action?: string) => {
@@ -176,7 +179,6 @@ export default function PlayStoryScreen() {
                 break;
         }
 
-        // FIX: Explicitly type the new entry to satisfy TypeScript
         const newUserEntry: StoryEntry = { type: 'user', text: userTurnText };
         const newHistory = [...storyContent.map(entry => ({...entry, isNew: false })), newUserEntry];
         
@@ -202,7 +204,7 @@ export default function PlayStoryScreen() {
             <>
                 {storyContent.map((entry, index) => (
                      <FormattedText
-                        key={index}
+                        key={`${index}-${entry.text.slice(0, 10)}`}
                         text={entry.text}
                         style={entry.type === 'user' ? styles.userText : styles.storyText}
                         isNew={entry.isNew}
