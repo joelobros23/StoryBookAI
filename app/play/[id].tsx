@@ -16,8 +16,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
+
 // --- Gemini API Configuration ---
-const API_KEY = "AIzaSyAhz-vMTfd4NjDreB-qz0mjGVBVYvNon00"; // Use your Gemini API Key here.
+const API_KEY = "AIzaSyAhz-vMTfd4NjDreB-qz0mjGVBVYvNon00"; // IMPORTANT: Replace with your Gemini API Key.
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
 // --- Type Definitions ---
@@ -32,12 +33,52 @@ type StoryDocument = Models.Document & {
 type StoryEntry = {
     type: 'ai' | 'user';
     text: string;
+    isNew?: boolean; // Flag for newly generated AI text
 };
 
 type InputMode = 'Do' | 'Say' | 'Story';
 
 // --- Components ---
-const ActionButton = ({ icon, label, onPress, disabled = false }) => (
+
+/**
+ * A component to render text with markdown-like formatting (**bold**, *italic*)
+ * and underline new AI-generated content.
+ */
+const FormattedText = ({ text, style, isNew = false }: { text: string; style: any; isNew?: boolean }) => {
+    // Regex to find **bold** and *italic* text, and split the string by them.
+    const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g).filter(Boolean);
+
+    const textStyle = [style];
+    if (isNew) {
+        // Apply underline style only to new AI text
+        textStyle.push(styles.newlyGeneratedText);
+    }
+
+    return (
+        <Text style={textStyle}>
+            {parts.map((part, index) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                    return (
+                        <Text key={index} style={styles.boldText}>
+                            {part.slice(2, -2)}
+                        </Text>
+                    );
+                }
+                if (part.startsWith('*') && part.endsWith('*')) {
+                    return (
+                        <Text key={index} style={styles.italicText}>
+                            {part.slice(1, -1)}
+                        </Text>
+                    );
+                }
+                return part; // Regular text
+            })}
+        </Text>
+    );
+};
+
+
+const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; disabled?: boolean }) => (
     <TouchableOpacity style={[styles.actionButton, disabled && styles.disabledButton]} onPress={onPress} disabled={disabled}>
         <Feather name={icon} size={18} color={disabled ? "#666" : "#e0e0e0"} />
         <Text style={[styles.actionButtonText, disabled && { color: "#666"}]}>{label}</Text>
@@ -60,12 +101,13 @@ export default function PlayStoryScreen() {
     const [inputMode, setInputMode] = useState<InputMode>('Do');
     const [isSelectingMode, setIsSelectingMode] = useState(false);
     const [error, setError] = useState<string | null>(null);
-const handleHeaderLayout = (event: LayoutChangeEvent) => {
+    
+    const handleHeaderLayout = (event: LayoutChangeEvent) => {
         const { height } = event.nativeEvent.layout;
         setHeaderHeight(height);
     };
 
-        useEffect(() => {
+    useEffect(() => {
         const keyboardDidShowListener = Keyboard.addListener(
             'keyboardDidShow',
             (e) => {
@@ -85,6 +127,7 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
             keyboardDidHideListener.remove();
         };
     }, []);
+
     // --- Data Fetching Effect ---
     useEffect(() => {
         const fetchStory = async () => {
@@ -98,7 +141,7 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
                 const fetchedStory = response as StoryDocument;
                 setStory(fetchedStory);
                 if (fetchedStory.opening) {
-                    setStoryContent([{ type: 'ai', text: fetchedStory.opening }]);
+                    setStoryContent([{ type: 'ai', text: fetchedStory.opening, isNew: true }]);
                 }
             } catch (err: any) {
                 console.error("Failed to fetch story:", err);
@@ -145,7 +188,10 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
             const result = await response.json();
             if (result.candidates && result.candidates.length > 0) {
                 const aiText = result.candidates[0].content.parts[0].text;
-                setStoryContent(prev => [...prev, { type: 'ai', text: aiText.trim() }]);
+                setStoryContent(prev => {
+                    const oldContent = prev.map(entry => ({ ...entry, isNew: false }));
+                    return [...oldContent, { type: 'ai', text: aiText.trim(), isNew: true }];
+                });
             } else {
                 throw new Error("Invalid response structure from AI.");
             }
@@ -178,7 +224,10 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
                 break;
         }
 
-        const newHistory = [...storyContent, { type: 'user', text: userTurnText }];
+        const newHistory = [
+            ...storyContent.map(entry => ({...entry, isNew: false })),
+            { type: 'user', text: userTurnText }
+        ];
         setStoryContent(newHistory);
         generateStoryContinuation(newHistory, actionForAI);
         setUserInput('');
@@ -186,7 +235,11 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
         setIsSelectingMode(false);
     };
 
-    const handleContinue = () => generateStoryContinuation(storyContent);
+    const handleContinue = () => {
+        const newHistory = storyContent.map(entry => ({...entry, isNew: false }));
+        setStoryContent(newHistory);
+        generateStoryContinuation(newHistory);
+    }
 
     // --- UI Rendering ---
     const renderContent = () => {
@@ -194,19 +247,17 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
         if (error) return <Text style={[styles.storyText, styles.centered, { color: '#ff6b6b' }]}>{error}</Text>;
 
         return (
-            <ScrollView 
-                ref={scrollViewRef} 
-                style={styles.storyScrollView} 
-                contentContainerStyle={styles.storyContainer}
-                keyboardDismissMode="interactive"
-            >
+            <>
                 {storyContent.map((entry, index) => (
-                    <Text key={index} style={[styles.storyText, entry.type === 'user' && styles.userText]}>
-                        {entry.text}
-                    </Text>
+                     <FormattedText
+                        key={index}
+                        text={entry.text}
+                        style={entry.type === 'user' ? styles.userText : styles.storyText}
+                        isNew={entry.isNew}
+                    />
                 ))}
                 {isAiThinking && <ActivityIndicator style={{ marginVertical: 15 }} color="#c792ea" />}
-            </ScrollView>
+            </>
         );
     };
 
@@ -265,7 +316,7 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
         );
     };
 
-        return (
+    return (
         <SafeAreaView 
             style={styles.container} 
             edges={['bottom']} // Only handle bottom safe area
@@ -291,11 +342,11 @@ const handleHeaderLayout = (event: LayoutChangeEvent) => {
                 </TouchableOpacity>
             </View>
             
-            {/* Updated KeyboardAvoidingView without offset */}
+            {/* Main content area */}
             <View style={styles.flexContainer}>
                 <ScrollView 
                     ref={scrollViewRef}
-                    style={styles.flexContainer}
+                    style={styles.storyScrollView}
                     contentContainerStyle={styles.storyContainer}
                     keyboardDismissMode="interactive"
                 >
@@ -334,11 +385,14 @@ const styles = StyleSheet.create({
     settingsButton: {
         padding: 5,
     },
-    headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#FFFFFF' },
-  messageList: { flex: 1, paddingHorizontal: 10 },
-  messageContainer: {
-    marginVertical: 5,
-  },
+    headerTitle: { 
+        fontSize: 20, 
+        fontWeight: 'bold', 
+        color: '#FFFFFF',
+        flex: 1,
+        textAlign: 'center',
+        marginHorizontal: 10,
+    },
     storyScrollView: {
         flex: 1,
     },
@@ -362,6 +416,20 @@ const styles = StyleSheet.create({
         color: '#c792ea',
         fontStyle: 'italic',
         fontWeight: 'bold',
+        fontSize: 18,
+        lineHeight: 28,
+        marginBottom: 15,
+    },
+    newlyGeneratedText: {
+        textDecorationLine: 'underline',
+        textDecorationColor: '#c792ea',
+        textDecorationStyle: 'solid',
+    },
+    boldText: {
+        fontWeight: 'bold',
+    },
+    italicText: {
+        fontStyle: 'italic',
     },
     inputWrapper: {
         backgroundColor: '#1e1e1e',
