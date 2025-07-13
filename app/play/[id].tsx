@@ -82,10 +82,10 @@ const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: keyof 
 );
 
 export default function PlayStoryScreen() {
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
-    const { id } = useLocalSearchParams();
+    const { id, story: storyString } = useLocalSearchParams<{ id: string; story?: string }>();
     const router = useRouter();
     const scrollViewRef = useRef<ScrollView>(null);
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
     const [headerHeight, setHeaderHeight] = useState(0);
     // --- State Management ---
     const [story, setStory] = useState<StoryDocument | null>(null);
@@ -124,10 +124,27 @@ export default function PlayStoryScreen() {
         };
     }, []);
 
-    // --- Data Fetching Effect ---
+    // --- Data Loading Effect ---
     useEffect(() => {
-        const fetchStory = async () => {
-            if (!id || typeof id !== 'string') {
+        const loadStory = async () => {
+            // Priority 1: Use story data passed via params (the "local copy")
+            if (storyString) {
+                try {
+                    const storyData = JSON.parse(storyString) as StoryDocument;
+                    setStory(storyData);
+                    if (storyData.opening) {
+                        setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
+                    }
+                    setIsLoading(false);
+                    return; // Exit after loading from params
+                } catch (e) {
+                    console.error("Failed to parse story data from params", e);
+                    // Fallback to fetching if parsing fails
+                }
+            }
+
+            // Priority 2: Fetch from database if no local copy is found
+            if (!id) {
                 setError("Invalid Story ID.");
                 setIsLoading(false);
                 return;
@@ -146,8 +163,8 @@ export default function PlayStoryScreen() {
                 setIsLoading(false);
             }
         };
-        fetchStory();
-    }, [id]);
+        loadStory();
+    }, [id, storyString]);
     
     // --- Auto-scroll Effect ---
     useEffect(() => {
@@ -267,6 +284,7 @@ export default function PlayStoryScreen() {
                             onChangeText={setUserInput}
                             autoFocus={true}
                             editable={!isAiThinking}
+                            multiline
                         />
                         <TouchableOpacity style={styles.sendButton} onPress={handleSendInput} disabled={isAiThinking || userInput.trim() === ''}>
                             <Feather name="send" size={24} color={isAiThinking || userInput.trim() === '' ? "#666" : "#c792ea"} />
@@ -289,30 +307,25 @@ export default function PlayStoryScreen() {
     return (
         <SafeAreaView 
             style={styles.container} 
-            edges={['bottom']} // Only handle bottom safe area
+            edges={['bottom']}
         >
-            {/* Header without extra padding */}
             <View 
                 style={styles.header}
                 onLayout={handleHeaderLayout}
             >
-                {/* Back button */}
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isAiThinking}>
                     <Feather name="chevron-left" size={28} color="#FFFFFF" />
                 </TouchableOpacity>
                 
-                {/* Title */}
                 <Text style={styles.headerTitle} numberOfLines={1}>
                     {isLoading ? 'Loading...' : story?.title || 'Story'}
                 </Text>
                 
-                {/* Settings button */}
                 <TouchableOpacity style={styles.settingsButton} disabled={isAiThinking}>
                     <Feather name="settings" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
             </View>
             
-            {/* Main content area */}
             <View style={styles.flexContainer}>
                 <ScrollView 
                     ref={scrollViewRef}
@@ -323,7 +336,6 @@ export default function PlayStoryScreen() {
                     {renderContent()}
                 </ScrollView>
                 
-                {/* Input area with keyboard padding */}
                 <View style={[styles.inputWrapper, { paddingBottom: keyboardHeight }]}>
                     {renderInputArea()}
                 </View>
@@ -345,7 +357,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 16,
-        paddingVertical: 12, // Normal vertical padding
+        paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: '#333',
     },
