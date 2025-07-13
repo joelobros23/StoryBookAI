@@ -1,18 +1,13 @@
 import { Feather } from '@expo/vector-icons';
-import { Models, Query } from 'appwrite';
+import { Query } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
-import { getStoryHistory } from '../../lib/history'; // Import the new history function
-
-// Define a type for the story documents for type safety
-type Story = Models.Document & {
-    title: string;
-    description: string;
-};
+import { getStoryHistory } from '../../lib/history';
+import { StoryDocument } from '../types/story'; // Import the correct, centralized type
 
 type ProfileTab = 'Creations' | 'History';
 
@@ -20,7 +15,8 @@ export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
     
-    const [stories, setStories] = useState<Story[]>([]);
+    // This state will now correctly hold an array of StoryDocument
+    const [listData, setListData] = useState<StoryDocument[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
 
@@ -39,7 +35,7 @@ export default function ProfileScreen() {
                         Query.orderDesc('$createdAt')
                     ]
                 );
-                setStories(response.documents as Story[]);
+                setListData(response.documents as StoryDocument[]);
             } catch (error) {
                 console.error("Failed to fetch stories:", error);
                 Alert.alert("Error", "Could not fetch your creations.");
@@ -50,8 +46,9 @@ export default function ProfileScreen() {
 
         const fetchHistory = async () => {
             try {
-                const historyStories = await getStoryHistory();
-                setStories(historyStories);
+                const historySessions = await getStoryHistory();
+                // Extract the story object from each session to display in the list
+                setListData(historySessions.map(session => session.story));
             } catch (error) {
                  console.error("Failed to fetch history:", error);
                 Alert.alert("Error", "Could not fetch your history.");
@@ -76,8 +73,15 @@ export default function ProfileScreen() {
         }
     };
 
-    const renderStoryItem = ({ item }: { item: Story }) => (
-        <TouchableOpacity style={styles.storyCard} onPress={() => router.push(`/play/${item.$id}`)}>
+    const renderStoryItem = ({ item }: { item: StoryDocument }) => (
+        <TouchableOpacity 
+            style={styles.storyCard} 
+            // When opening from history, pass the full story object to use the local copy
+            onPress={() => router.push({
+                pathname: '/play/[id]',
+                params: { id: item.$id, story: JSON.stringify(item) }
+            })}
+        >
             <View style={styles.storyCardIcon}>
                 <Feather name="book-open" size={24} color="#c792ea" />
             </View>
@@ -100,7 +104,7 @@ export default function ProfileScreen() {
 
         return (
             <FlatList
-                data={stories}
+                data={listData}
                 renderItem={renderStoryItem}
                 keyExtractor={(item) => item.$id}
                 ListEmptyComponent={<Text style={styles.emptyListText}>{emptyMessage}</Text>}

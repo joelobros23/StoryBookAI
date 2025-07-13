@@ -1,5 +1,4 @@
 import { Feather } from '@expo/vector-icons';
-import { Models } from 'appwrite';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -17,21 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 import { generateStoryContinuation as generateAiResponse } from '../../lib/gemini';
 import { getStorySession, saveStorySessionContent } from '../../lib/history';
-
-// --- Type Definitions ---
-type StoryDocument = Models.Document & {
-    title: string;
-    opening: string;
-    ai_instruction: string;
-    story_summary: string;
-    plot_essentials: string;
-};
-
-type StoryEntry = {
-    type: 'ai' | 'user';
-    text: string;
-    isNew?: boolean; // Flag for newly generated AI text
-};
+import { StoryDocument, StoryEntry } from '../types/story'; // Import shared types
 
 type InputMode = 'Do' | 'Say' | 'Story';
 
@@ -105,8 +90,7 @@ export default function PlayStoryScreen() {
             // Check for a saved session in local history first
             const savedSession = await getStorySession(id);
             if (savedSession) {
-                setStory(savedSession.story as StoryDocument);
-                // If there's saved content, use it. Otherwise, use the opening text.
+                setStory(savedSession.story); // No need to cast, types now match
                 if (savedSession.content && savedSession.content.length > 0) {
                     setStoryContent(savedSession.content);
                 } else if (savedSession.story.opening) {
@@ -116,8 +100,6 @@ export default function PlayStoryScreen() {
                 return;
             }
 
-            // Fallback for stories not yet in history (e.g., from deep link)
-            // Or if passed directly from creation screen
             if (storyString) {
                 try {
                     const storyData = JSON.parse(storyString) as StoryDocument;
@@ -132,13 +114,11 @@ export default function PlayStoryScreen() {
                 }
             }
 
-            // Final fallback: fetch from the database
             try {
                 const response = await databases.getDocument(databaseId, storiesCollectionId, id);
-                const fetchedStory = response as StoryDocument;
-                setStory(fetchedStory);
-                if (fetchedStory.opening) {
-                    setStoryContent([{ type: 'ai', text: fetchedStory.opening, isNew: true }]);
+                setStory(response as StoryDocument);
+                if (response.opening) {
+                    setStoryContent([{ type: 'ai', text: response.opening, isNew: true }]);
                 }
             } catch (err: any) {
                 console.error("Failed to fetch story:", err);
@@ -168,7 +148,8 @@ export default function PlayStoryScreen() {
         if (aiText) {
             setStoryContent(prev => {
                 const oldContent = prev.map(entry => ({ ...entry, isNew: false }));
-                return [...oldContent, { type: 'ai', text: aiText, isNew: true }];
+                const newEntry: StoryEntry = { type: 'ai', text: aiText, isNew: true };
+                return [...oldContent, newEntry];
             });
         }
         setIsAiThinking(false);
@@ -195,12 +176,13 @@ export default function PlayStoryScreen() {
                 break;
         }
 
-        const newHistory = [
-            ...storyContent.map(entry => ({...entry, isNew: false })),
-            { type: 'user', text: userTurnText }
-        ];
+        // FIX: Explicitly type the new entry to satisfy TypeScript
+        const newUserEntry: StoryEntry = { type: 'user', text: userTurnText };
+        const newHistory = [...storyContent.map(entry => ({...entry, isNew: false })), newUserEntry];
+        
         setStoryContent(newHistory);
         handleGenerateStoryContinuation(newHistory, actionForAI);
+        
         setUserInput('');
         setIsTakingTurn(false);
         setIsSelectingMode(false);

@@ -1,34 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Models } from 'appwrite';
 import { Alert } from 'react-native';
+import { StoryDocument, StoryEntry, StorySession } from '../app/types/story';
 
 const HISTORY_KEY = 'story_history';
 
-// --- Type Definitions ---
-export type Story = Models.Document & {
-    title: string;
-    description: string;
-};
-
-export type StoryEntry = {
-    type: 'ai' | 'user';
-    text: string;
-    isNew?: boolean;
-};
-
-export type StorySession = {
-    story: Story;
-    content: StoryEntry[];
-};
-
 /**
  * Retrieves the list of all story sessions from local history.
+ * This is now more robust and filters out any malformed entries.
  * @returns An array of story sessions.
  */
 export const getStoryHistory = async (): Promise<StorySession[]> => {
     try {
         const jsonValue = await AsyncStorage.getItem(HISTORY_KEY);
-        return jsonValue != null ? JSON.parse(jsonValue) : [];
+        if (jsonValue != null) {
+            const parsed = JSON.parse(jsonValue);
+            // Filter out any entries that are not valid sessions
+            return Array.isArray(parsed) ? parsed.filter(item => item && item.story && item.story.$id) : [];
+        }
+        return [];
     } catch (e) {
         console.error("Failed to load story history.", e);
         Alert.alert("Error", "Could not load your story history.");
@@ -58,7 +47,7 @@ export const getStorySession = async (storyId: string): Promise<StorySession | n
  * It avoids adding duplicate stories.
  * @param newStory - The story document to add.
  */
-export const addStoryToHistory = async (newStory: Story) => {
+export const addStoryToHistory = async (newStory: StoryDocument) => {
     try {
         const existingHistory = await getStoryHistory();
         const isAlreadyInHistory = existingHistory.some(session => session.story.$id === newStory.$id);

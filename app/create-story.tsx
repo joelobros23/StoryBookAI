@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { databaseId, databases, ID, storiesCollectionId } from '../lib/appwrite';
 import { addStoryToHistory } from '../lib/history';
+import { StoryDocument } from './types/story'; // Import the shared StoryDocument type
 
 // Define prop types for FormInput
 type FormInputProps = {
@@ -118,14 +119,15 @@ export default function CreateStoryScreen() {
             storyData
         );
         
-        // Add the newly created story to our local history
-        await addStoryToHistory(newStoryDocument);
+        // Use the correct, full type for the history function
+        await addStoryToHistory(newStoryDocument as StoryDocument);
 
         Alert.alert("Success!", "Your story has been created.");
         
+        // Use the correct object syntax for typed routes
         router.push({
-            pathname: `/play/${newStoryDocument.$id}`,
-            params: { story: JSON.stringify(newStoryDocument) }
+            pathname: '/play/[id]',
+            params: { id: newStoryDocument.$id, story: JSON.stringify(newStoryDocument) }
         });
 
     } catch (error: any) {
