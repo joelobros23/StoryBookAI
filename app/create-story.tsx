@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { databaseId, databases, ID, storiesCollectionId } from '../lib/appwrite';
-
+import { addStoryToHistory } from '../lib/history';
 
 // Define prop types for FormInput
 type FormInputProps = {
@@ -96,19 +96,18 @@ export default function CreateStoryScreen() {
 
     setIsLoading(true);
 
-    // Map state to the attribute names in your Appwrite collection
     const storyData = {
         title,
         description,
         tags,
         opening,
-        ai_instruction: aiInstructions, // Note the underscore
+        ai_instruction: aiInstructions,
         story_summary: storySummary,
         plot_essentials: plotEssentials,
         ask_user_name: askName,
         ask_user_age: askAge,
         ask_user_gender: askGender,
-        userId: user.$id, // Associate the story with the user
+        userId: user.$id,
     };
 
     try {
@@ -119,10 +118,11 @@ export default function CreateStoryScreen() {
             storyData
         );
         
+        // Add the newly created story to our local history
+        await addStoryToHistory(newStoryDocument);
+
         Alert.alert("Success!", "Your story has been created.");
         
-        // Navigate to the play screen with the new story's data passed as a parameter.
-        // This creates the "local copy" for the session.
         router.push({
             pathname: `/play/${newStoryDocument.$id}`,
             params: { story: JSON.stringify(newStoryDocument) }
@@ -146,7 +146,6 @@ export default function CreateStoryScreen() {
                 <Text style={styles.headerTitle}>Create Your Story</Text>
             </View>
 
-            {/* Tab Switcher */}
             <View style={styles.tabContainer}>
                 <TouchableOpacity
                     style={[styles.tab, activeTab === 'Details' && styles.activeTab]}
@@ -160,64 +159,18 @@ export default function CreateStoryScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* Content based on active tab */}
             {activeTab === 'Details' ? (
                 <View style={styles.formContainer}>
-                    <FormInput
-                        label="Title"
-                        value={title}
-                        onChangeText={setTitle}
-                        placeholder="The Lost Amulet of Gorgon"
-                    />
-                    <FormInput
-                        label="Description"
-                        value={description}
-                        onChangeText={setDescription}
-                        placeholder="A short summary about your story's theme and setting."
-                        multiline
-                        height={120}
-                    />
-                    <FormInput
-                        label="Tags"
-                        value={tags}
-                        onChangeText={setTags}
-                        placeholder="fantasy, magic, adventure"
-                    />
+                    <FormInput label="Title" value={title} onChangeText={setTitle} placeholder="The Lost Amulet of Gorgon" />
+                    <FormInput label="Description" value={description} onChangeText={setDescription} placeholder="A short summary about your story's theme and setting." multiline height={120} />
+                    <FormInput label="Tags" value={tags} onChangeText={setTags} placeholder="fantasy, magic, adventure" />
                 </View>
             ) : (
                 <View style={styles.formContainer}>
-                    <FormInput
-                        label="Opening"
-                        value={opening}
-                        onChangeText={setOpening}
-                        placeholder="You find yourself in a dimly lit tavern..."
-                        multiline
-                        height={120}
-                    />
-                    <FormInput
-                        label="AI Instructions"
-                        value={aiInstructions}
-                        onChangeText={setAiInstructions}
-                        placeholder="Generate responses in third-person. Avoid graphic violence."
-                        multiline
-                        height={120}
-                    />
-                    <FormInput
-                        label="Story Summary"
-                        value={storySummary}
-                        onChangeText={setStorySummary}
-                        placeholder="The main character is searching for a lost family heirloom."
-                        multiline
-                        height={120}
-                    />
-                    <FormInput
-                        label="Plot Essentials (Memory)"
-                        value={plotEssentials}
-                        onChangeText={setPlotEssentials}
-                        placeholder="The king is secretly a vampire. The amulet glows near undead."
-                        multiline
-                        height={120}
-                    />
+                    <FormInput label="Opening" value={opening} onChangeText={setOpening} placeholder="You find yourself in a dimly lit tavern..." multiline height={120} />
+                    <FormInput label="AI Instructions" value={aiInstructions} onChangeText={setAiInstructions} placeholder="Generate responses in third-person. Avoid graphic violence." multiline height={120} />
+                    <FormInput label="Story Summary" value={storySummary} onChangeText={setStorySummary} placeholder="The main character is searching for a lost family heirloom." multiline height={120} />
+                    <FormInput label="Plot Essentials (Memory)" value={plotEssentials} onChangeText={setPlotEssentials} placeholder="The king is secretly a vampire. The amulet glows near undead." multiline height={120} />
                     <ToggleSwitch label="Ask for User's Name" value={askName} onValueChange={setAskName} />
                     <ToggleSwitch label="Ask for User's Age" value={askAge} onValueChange={setAskAge} />
                     <ToggleSwitch label="Ask for User's Gender" value={askGender} onValueChange={setAskGender} />
@@ -243,7 +196,7 @@ const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
         backgroundColor: '#121212',
-        paddingTop: 40, // Manual padding top for status bar area
+        paddingTop: 40,
     },
     container: {
         paddingHorizontal: 20,

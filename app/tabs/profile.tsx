@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
+import { getStoryHistory } from '../../lib/history'; // Import the new history function
 
 // Define a type for the story documents for type safety
 type Story = Models.Document & {
@@ -24,7 +25,7 @@ export default function ProfileScreen() {
     const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
 
     useEffect(() => {
-        const fetchStories = async () => {
+        const fetchCreations = async () => {
             if (!user) {
                 setIsLoading(false);
                 return;
@@ -35,22 +36,37 @@ export default function ProfileScreen() {
                     storiesCollectionId,
                     [
                         Query.equal('userId', user.$id),
-                        Query.orderDesc('$createdAt') // Show newest stories first
+                        Query.orderDesc('$createdAt')
                     ]
                 );
                 setStories(response.documents as Story[]);
             } catch (error) {
                 console.error("Failed to fetch stories:", error);
-                Alert.alert("Error", "Could not fetch your stories.");
+                Alert.alert("Error", "Could not fetch your creations.");
             } finally {
                 setIsLoading(false);
             }
         };
 
+        const fetchHistory = async () => {
+            try {
+                const historyStories = await getStoryHistory();
+                setStories(historyStories);
+            } catch (error) {
+                 console.error("Failed to fetch history:", error);
+                Alert.alert("Error", "Could not fetch your history.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        setIsLoading(true);
         if (activeTab === 'Creations') {
-            fetchStories();
+            fetchCreations();
+        } else { // History tab
+            fetchHistory();
         }
-    }, [user, activeTab]); // Refetch stories if the user or tab changes
+    }, [user, activeTab]);
 
     const handleLogout = async () => {
         try {
@@ -74,20 +90,20 @@ export default function ProfileScreen() {
     );
     
     const renderContent = () => {
-        if (activeTab === 'History') {
-            return <Text style={styles.emptyListText}>History will be available soon.</Text>;
-        }
-        
         if (isLoading) {
             return <ActivityIndicator size="large" color="#c792ea" style={{ marginTop: 20 }}/>;
         }
+
+        const emptyMessage = activeTab === 'Creations' 
+            ? "You haven't created any stories yet." 
+            : "Your story history is empty.";
 
         return (
             <FlatList
                 data={stories}
                 renderItem={renderStoryItem}
                 keyExtractor={(item) => item.$id}
-                ListEmptyComponent={<Text style={styles.emptyListText}>You haven't created any stories yet.</Text>}
+                ListEmptyComponent={<Text style={styles.emptyListText}>{emptyMessage}</Text>}
             />
         );
     };
@@ -167,7 +183,7 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     storiesSection: {
-        flex: 1, // Make this section take up the remaining space
+        flex: 1,
         width: '100%',
         backgroundColor: '#1e1e1e',
     },
