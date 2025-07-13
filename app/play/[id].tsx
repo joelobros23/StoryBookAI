@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Keyboard,
     LayoutChangeEvent,
     ScrollView,
@@ -16,10 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
-
-// --- Gemini API Configuration ---
-const API_KEY = "AIzaSyAhz-vMTfd4NjDreB-qz0mjGVBVYvNon00"; // IMPORTANT: Replace with your Gemini API Key.
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+import { generateStoryContinuation as generateAiResponse } from '../../lib/gemini';
 
 // --- Type Definitions ---
 type StoryDocument = Models.Document & {
@@ -161,46 +157,20 @@ export default function PlayStoryScreen() {
     }, [storyContent]);
 
     // --- AI Interaction Logic ---
-    const generateStoryContinuation = async (currentHistory: StoryEntry[], action?: string) => {
+    const handleGenerateStoryContinuation = async (currentHistory: StoryEntry[], action?: string) => {
         if (!story) return;
         setIsAiThinking(true);
 
-        const historyText = currentHistory.map(entry => entry.text).join('\n\n');
+        const aiText = await generateAiResponse(story, currentHistory, action);
 
-        const prompt = `${story.ai_instruction || ''}
-        **Story Summary:** ${story.story_summary || 'Not provided.'}
-        **Plot Essentials (Memory):** ${story.plot_essentials || 'Not provided.'}
-        **Story So Far:**
-        ${historyText}
-        ${action || 'Continue the story.'}`;
-
-        try {
-            const payload = {
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { maxOutputTokens: 150, temperature: 0.8, topP: 0.9 }
-            };
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+        if (aiText) {
+            setStoryContent(prev => {
+                const oldContent = prev.map(entry => ({ ...entry, isNew: false }));
+                return [...oldContent, { type: 'ai', text: aiText, isNew: true }];
             });
-            if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
-            const result = await response.json();
-            if (result.candidates && result.candidates.length > 0) {
-                const aiText = result.candidates[0].content.parts[0].text;
-                setStoryContent(prev => {
-                    const oldContent = prev.map(entry => ({ ...entry, isNew: false }));
-                    return [...oldContent, { type: 'ai', text: aiText.trim(), isNew: true }];
-                });
-            } else {
-                throw new Error("Invalid response structure from AI.");
-            }
-        } catch (err: any) {
-            console.error("AI generation failed:", err);
-            Alert.alert("AI Error", "The AI failed to generate a response. Please try again.");
-        } finally {
-            setIsAiThinking(false);
         }
+        
+        setIsAiThinking(false);
     };
 
     const handleSendInput = () => {
@@ -229,7 +199,7 @@ export default function PlayStoryScreen() {
             { type: 'user', text: userTurnText }
         ];
         setStoryContent(newHistory);
-        generateStoryContinuation(newHistory, actionForAI);
+        handleGenerateStoryContinuation(newHistory, actionForAI);
         setUserInput('');
         setIsTakingTurn(false);
         setIsSelectingMode(false);
@@ -238,7 +208,7 @@ export default function PlayStoryScreen() {
     const handleContinue = () => {
         const newHistory = storyContent.map(entry => ({...entry, isNew: false }));
         setStoryContent(newHistory);
-        generateStoryContinuation(newHistory);
+        handleGenerateStoryContinuation(newHistory);
     }
 
     // --- UI Rendering ---

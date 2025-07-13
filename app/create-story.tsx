@@ -112,7 +112,7 @@ export default function CreateStoryScreen() {
     };
 
     try {
-        const newStory = await databases.createDocument(
+        const newStoryDocument = await databases.createDocument(
             databaseId,
             storiesCollectionId,
             ID.unique(),
@@ -121,8 +121,12 @@ export default function CreateStoryScreen() {
         
         Alert.alert("Success!", "Your story has been created.");
         
-        // Navigate to the play screen with the new story's ID
-        router.push(`/play/${newStory.$id}`);
+        // Navigate to the play screen with the new story's data passed as a parameter.
+        // This creates the "local copy" for the session.
+        router.push({
+            pathname: `/play/${newStoryDocument.$id}`,
+            params: { story: JSON.stringify(newStoryDocument) }
+        });
 
     } catch (error: any) {
         console.error("Failed to create story:", error);

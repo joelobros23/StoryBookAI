@@ -2,7 +2,7 @@ import { Feather } from '@expo/vector-icons';
 import { Models, Query } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
@@ -13,12 +13,15 @@ type Story = Models.Document & {
     description: string;
 };
 
+type ProfileTab = 'Creations' | 'History';
+
 export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
     
     const [stories, setStories] = useState<Story[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
 
     useEffect(() => {
         const fetchStories = async () => {
@@ -44,8 +47,10 @@ export default function ProfileScreen() {
             }
         };
 
-        fetchStories();
-    }, [user]); // Refetch stories if the user changes
+        if (activeTab === 'Creations') {
+            fetchStories();
+        }
+    }, [user, activeTab]); // Refetch stories if the user or tab changes
 
     const handleLogout = async () => {
         try {
@@ -67,41 +72,68 @@ export default function ProfileScreen() {
             <Feather name="chevron-right" size={24} color="#555" />
         </TouchableOpacity>
     );
+    
+    const renderContent = () => {
+        if (activeTab === 'History') {
+            return <Text style={styles.emptyListText}>History will be available soon.</Text>;
+        }
+        
+        if (isLoading) {
+            return <ActivityIndicator size="large" color="#c792ea" style={{ marginTop: 20 }}/>;
+        }
+
+        return (
+            <FlatList
+                data={stories}
+                renderItem={renderStoryItem}
+                keyExtractor={(item) => item.$id}
+                ListEmptyComponent={<Text style={styles.emptyListText}>You haven't created any stories yet.</Text>}
+            />
+        );
+    };
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <ScrollView contentContainerStyle={styles.container}>
-                <Feather name="user-check" size={80} color="#c792ea" />
-                
-                {user ? (
-                    <View style={styles.userInfoContainer}>
-                        <Text style={styles.name}>{user.name}</Text>
-                        <Text style={styles.email}>{user.email}</Text>
-                    </View>
-                ) : (
-                    <Text style={styles.email}>Loading user data...</Text>
-                )}
-
-                <View style={styles.storiesSection}>
-                    <Text style={styles.sectionTitle}>My Stories</Text>
-                    {isLoading ? (
-                        <ActivityIndicator size="large" color="#c792ea" style={{ marginTop: 20 }}/>
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <Feather name="user-check" size={80} color="#c792ea" />
+                    
+                    {user ? (
+                        <View style={styles.userInfoContainer}>
+                            <Text style={styles.name}>{user.name}</Text>
+                            <Text style={styles.email}>{user.email}</Text>
+                        </View>
                     ) : (
-                        <FlatList
-                            data={stories}
-                            renderItem={renderStoryItem}
-                            keyExtractor={(item) => item.$id}
-                            ListEmptyComponent={<Text style={styles.emptyListText}>You haven't created any stories yet.</Text>}
-                            scrollEnabled={false} // The outer ScrollView will handle scrolling
-                        />
+                        <Text style={styles.email}>Loading user data...</Text>
                     )}
+
+                    <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                        <Text style={styles.logoutButtonText}>Logout</Text>
+                        <Feather name="log-out" size={20} color="#FFFFFF" style={{ marginLeft: 10 }}/>
+                    </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                    <Text style={styles.logoutButtonText}>Logout</Text>
-                    <Feather name="log-out" size={20} color="#FFFFFF" style={{ marginLeft: 10 }}/>
-                </TouchableOpacity>
-            </ScrollView>
+                <View style={styles.storiesSection}>
+                    <View style={styles.tabContainer}>
+                        <TouchableOpacity 
+                            style={[styles.tab, activeTab === 'Creations' && styles.activeTab]} 
+                            onPress={() => setActiveTab('Creations')}
+                        >
+                            <Text style={styles.tabText}>Creations</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.tab, activeTab === 'History' && styles.activeTab]}
+                            onPress={() => setActiveTab('History')}
+                        >
+                            <Text style={styles.tabText}>History</Text>
+                        </TouchableOpacity>
+                    </View>
+                    
+                    <View style={styles.tabContent}>
+                        {renderContent()}
+                    </View>
+                </View>
+            </View>
         </SafeAreaView>
     );
 }
@@ -112,8 +144,13 @@ const styles = StyleSheet.create({
         backgroundColor: '#121212',
     },
     container: {
+        flex: 1,
+    },
+    header: {
         alignItems: 'center',
         padding: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#1e1e1e',
     },
     userInfoContainer: {
         alignItems: 'center',
@@ -130,17 +167,32 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     storiesSection: {
+        flex: 1, // Make this section take up the remaining space
         width: '100%',
         backgroundColor: '#1e1e1e',
-        borderRadius: 15,
-        padding: 20,
-        marginBottom: 30,
     },
-    sectionTitle: {
-        fontSize: 22,
-        fontWeight: 'bold',
+    tabContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#121212',
+    },
+    tab: {
+        flex: 1,
+        paddingVertical: 15,
+        alignItems: 'center',
+        borderBottomWidth: 2,
+        borderBottomColor: 'transparent',
+    },
+    activeTab: {
+        borderBottomColor: '#c792ea',
+    },
+    tabText: {
         color: '#FFFFFF',
-        marginBottom: 15,
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    tabContent: {
+        flex: 1,
+        padding: 20,
     },
     storyCard: {
         flexDirection: 'row',
@@ -169,20 +221,22 @@ const styles = StyleSheet.create({
     emptyListText: {
         color: '#a9a9a9',
         textAlign: 'center',
-        marginTop: 20,
+        marginTop: 40,
         fontStyle: 'italic',
+        fontSize: 16,
     },
     logoutButton: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#c73e3e',
-        paddingVertical: 15,
-        paddingHorizontal: 40,
+        paddingVertical: 12,
+        paddingHorizontal: 30,
         borderRadius: 30,
+        marginTop: 10,
     },
     logoutButtonText: {
         color: '#FFFFFF',
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: 'bold',
     },
 });
