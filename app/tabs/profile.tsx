@@ -2,12 +2,11 @@ import { Feather } from '@expo/vector-icons';
 import { Query } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
-import { getStoryHistory } from '../../lib/history';
-// FIX: Correctly import all types from the central types file
+import { deleteStorySession, getStoryHistory } from '../../lib/history'; // Import deleteStorySession
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
@@ -16,11 +15,12 @@ export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
     
-    // FIX: Use separate state for creations and history to avoid type conflicts
     const [creations, setCreations] = useState<StoryDocument[]>([]);
     const [history, setHistory] = useState<StorySession[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null);
 
     useEffect(() => {
         const fetchCreations = async () => {
@@ -59,8 +59,18 @@ export default function ProfileScreen() {
         await logout();
     };
 
+    const handleDeleteSession = async () => {
+        if (sessionToDelete) {
+            await deleteStorySession(sessionToDelete.sessionId);
+            // Refresh history after deletion
+            const updatedHistory = await getStoryHistory();
+            setHistory(updatedHistory);
+            setShowDeleteModal(false);
+            setSessionToDelete(null);
+        }
+    };
+
     const renderCreationItem = ({ item }: { item: StoryDocument }) => (
-        // FIX: Use the correct object syntax for typed routes
         <TouchableOpacity style={styles.storyCard} onPress={() => router.push({ pathname: `/story-info/[id]`, params: { id: item.$id } })}>
             <View style={styles.storyCardIcon}><Feather name="book" size={24} color="#c792ea" /></View>
             <View style={styles.storyCardTextContainer}>
@@ -78,6 +88,10 @@ export default function ProfileScreen() {
                 pathname: `/play/[sessionId]`,
                 params: { sessionId: item.sessionId, story: JSON.stringify(item.story) }
             })}
+            onLongPress={() => {
+                setSessionToDelete(item);
+                setShowDeleteModal(true);
+            }}
         >
             <View style={styles.storyCardIcon}><Feather name="book-open" size={24} color="#82aaff" /></View>
             <View style={styles.storyCardTextContainer}>
@@ -134,6 +148,37 @@ export default function ProfileScreen() {
                     <View style={styles.tabContent}>{renderContent()}</View>
                 </View>
             </View>
+
+            {/* Delete Confirmation Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={showDeleteModal}
+                onRequestClose={() => setShowDeleteModal(false)}
+            >
+                <Pressable style={styles.modalOverlay} onPress={() => setShowDeleteModal(false)}>
+                    <View style={styles.modalView}>
+                        <Text style={styles.modalTitle}>Delete Session</Text>
+                        <Text style={styles.modalMessage}>
+                            Are you sure you want to delete the session for "{sessionToDelete?.story.title}"? This action cannot be undone.
+                        </Text>
+                        <View style={styles.modalButtonContainer}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.cancelButton]}
+                                onPress={() => setShowDeleteModal(false)}
+                            >
+                                <Text style={styles.modalButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.deleteButton]}
+                                onPress={handleDeleteSession}
+                            >
+                                <Text style={styles.modalButtonText}>Delete</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Pressable>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -160,4 +205,67 @@ const styles = StyleSheet.create({
     logoutButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#c73e3e', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 30, marginTop: 10 },
     logoutButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
     continueText: { color: '#82aaff', fontSize: 14, fontWeight: '600' },
+
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    },
+    modalView: {
+        margin: 20,
+        backgroundColor: '#1e1e1e',
+        borderRadius: 20,
+        padding: 35,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 5,
+        width: '90%',
+    },
+    modalTitle: {
+        marginBottom: 15,
+        textAlign: 'center',
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+    },
+    modalMessage: {
+        marginBottom: 20,
+        textAlign: 'center',
+        fontSize: 16,
+        color: '#e0e0e0',
+    },
+    modalButtonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
+    modalButton: {
+        borderRadius: 10,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        elevation: 2,
+        flex: 1,
+        marginHorizontal: 5,
+        alignItems: 'center',
+    },
+    cancelButton: {
+        backgroundColor: '#333',
+    },
+    deleteButton: {
+        backgroundColor: '#c73e3e', // Red color for delete
+    },
+    modalButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        fontSize: 16,
+    },
 });

@@ -22,6 +22,7 @@ export type StoryDocument = Models.Document & {
  * Defines a single entry in the chat/story log.
  */
 export type StoryEntry = {
+    id: string;
     type: 'ai' | 'user';
     text: string;
     isNew?: boolean;

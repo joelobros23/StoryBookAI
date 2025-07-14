@@ -89,3 +89,18 @@ export const saveSessionPlayerData = async (sessionId: string, playerData: Playe
         console.error("Failed to save session player data.", e);
     }
 };
+
+/**
+ * Deletes a story session from local history.
+ * @param sessionId - The ID of the session to delete.
+ */
+export const deleteStorySession = async (sessionId: string) => {
+    try {
+        const history = await getStoryHistory();
+        const updatedHistory = history.filter(session => session.sessionId !== sessionId);
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+        console.log(`Session with ID ${sessionId} deleted.`);
+    } catch (e) {
+        console.error("Failed to delete story session.", e);
+    }
+};
