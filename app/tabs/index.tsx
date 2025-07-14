@@ -91,6 +91,8 @@ export default function HomeScreen() {
   const [playModalVisible, setPlayModalVisible] = useState(false); // State for the main play modal
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false); // State for genre selection modal
   const [isGenerating, setIsGenerating] = useState(false); // State for loading indicator
+  // New state to store user names by their IDs
+  const [creatorNames, setCreatorNames] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     const fetchAllStories = async () => {
@@ -101,7 +103,54 @@ export default function HomeScreen() {
           storiesCollectionId,
           [Query.orderDesc('$createdAt')]
         );
-        setAllStories(response.documents as StoryDocument[]);
+        const fetchedStories = response.documents as StoryDocument[];
+        setAllStories(fetchedStories);
+
+        // Collect unique user IDs from fetched stories that don't already have a userName
+        const uniqueUserIds = new Set<string>();
+        fetchedStories.forEach(story => {
+          // Only add to set if userName is not already present in the story document
+          // AND we don't already have the name in our cache
+          if (story.userId && !story.userName && !creatorNames.has(story.userId)) {
+            uniqueUserIds.add(story.userId);
+          }
+        });
+
+        // This section demonstrates how you *would* fetch user names if a public
+        // 'users' collection existed or if 'userName' was not stored in 'StoryDocument'.
+        // However, for Appwrite client-side, directly querying other users' details
+        // by ID is not straightforward for security reasons.
+        // The RECOMMENDED way to display creator names is to:
+        // 1. Add a 'userName' attribute (string) to your 'stories' collection in Appwrite.
+        // 2. Modify 'create-story.tsx' to save 'user.name' into this 'userName' attribute
+        //    when the story is created.
+        // Once those changes are made, 'item.userName' will be directly available
+        // on the StoryDocument, making this separate fetch unnecessary.
+
+        const newCreatorNames = new Map(creatorNames);
+        for (const userId of Array.from(uniqueUserIds)) {
+          // Placeholder for actual user fetching logic.
+          // If you implement a 'users' collection with public read access,
+          // you would query it here:
+          // try {
+          //   const userDoc = await databases.getDocument(databaseId, 'usersCollectionId', userId);
+          //   newCreatorNames.set(userId, userDoc.name);
+          // } catch (error) {
+          //   console.warn(`Could not fetch name for user ${userId}:`, error);
+          //   newCreatorNames.set(userId, 'Anonymous');
+          // }
+
+          // For now, if the current logged-in user is the creator, use their name.
+          // Otherwise, it will default to 'Anonymous' if 'userName' is not in the document.
+          if (user && user.$id === userId) {
+            newCreatorNames.set(userId, user.name || 'Current User');
+          } else {
+            // If userName is not in the document and it's not the current user, default to anonymous
+            newCreatorNames.set(userId, 'Anonymous'); 
+          }
+        }
+        setCreatorNames(newCreatorNames);
+
       } catch (error) {
         console.error("Failed to fetch all stories:", error);
       } finally {
@@ -110,7 +159,7 @@ export default function HomeScreen() {
     };
 
     fetchAllStories();
-  }, []);
+  }, [user]); // Re-run when user changes (e.g., login/logout)
 
   // This function is called when the "Start New Story" button is pressed
   const handleStartNewStory = () => {
@@ -137,6 +186,9 @@ export default function HomeScreen() {
       ? item.description.substring(0, 100) + (item.description.length > 100 ? '...' : '')
       : 'No description provided.';
 
+    // Prioritize userName from the document, then from fetched names, then 'Anonymous'
+    const creatorName = item.userName || creatorNames.get(item.userId) || 'Anonymous';
+
     return (
       <TouchableOpacity 
         style={styles.storyListItem} 
@@ -146,7 +198,7 @@ export default function HomeScreen() {
         <Text style={styles.storyListItemDescription}>{truncatedDescription}</Text>
         <View style={styles.creatorInfo}>
           <Feather name="user" size={16} color="#a9a9a9" style={{ marginRight: 5 }} />
-          <Text style={styles.storyListItemCreator}>{item.userName || 'Anonymous'}</Text>
+          <Text style={styles.storyListItemCreator}>{creatorName}</Text>
         </View>
       </TouchableOpacity>
     );

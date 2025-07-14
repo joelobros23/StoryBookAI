@@ -19,8 +19,12 @@ export default function ProfileScreen() {
     const [history, setHistory] = useState<StorySession[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
-    const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null);
+    const [showDeleteModal, setShowDeleteModal] = useState(false); // For history deletion
+    const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null); // For history deletion
+
+    // New state for creation deletion
+    const [showDeleteCreationModal, setShowDeleteCreationModal] = useState(false);
+    const [creationToDelete, setCreationToDelete] = useState<StoryDocument | null>(null);
 
     useEffect(() => {
         const fetchCreations = async () => {
@@ -70,8 +74,35 @@ export default function ProfileScreen() {
         }
     };
 
+    // New function to handle creation deletion
+    const handleDeleteCreation = async () => {
+        if (creationToDelete) {
+            setIsLoading(true); // Show loading indicator during deletion
+            try {
+                await databases.deleteDocument(databaseId, storiesCollectionId, creationToDelete.$id);
+                // Filter out the deleted creation from the state
+                setCreations(prevCreations => prevCreations.filter(c => c.$id !== creationToDelete.$id));
+                Alert.alert("Success", "Story deleted successfully.");
+            } catch (error) {
+                console.error("Failed to delete story:", error);
+                Alert.alert("Error", "Could not delete story.");
+            } finally {
+                setIsLoading(false);
+                setShowDeleteCreationModal(false);
+                setCreationToDelete(null);
+            }
+        }
+    };
+
     const renderCreationItem = ({ item }: { item: StoryDocument }) => (
-        <TouchableOpacity style={styles.storyCard} onPress={() => router.push({ pathname: `/story-info/[id]`, params: { id: item.$id } })}>
+        <TouchableOpacity 
+            style={styles.storyCard} 
+            onPress={() => router.push({ pathname: `/story-info/[id]`, params: { id: item.$id } })}
+            onLongPress={() => { // Add long press for creations
+                setCreationToDelete(item);
+                setShowDeleteCreationModal(true);
+            }}
+        >
             <View style={styles.storyCardIcon}><Feather name="book" size={24} color="#c792ea" /></View>
             <View style={styles.storyCardTextContainer}>
                 <Text style={styles.storyTitle} numberOfLines={1}>{item.title}</Text>
@@ -149,7 +180,7 @@ export default function ProfileScreen() {
                 </View>
             </View>
 
-            {/* Delete Confirmation Modal */}
+            {/* Delete History Confirmation Modal */}
             <Modal
                 animationType="fade"
                 transparent={true}
@@ -172,6 +203,37 @@ export default function ProfileScreen() {
                             <TouchableOpacity
                                 style={[styles.modalButton, styles.deleteButton]}
                                 onPress={handleDeleteSession}
+                            >
+                                <Text style={styles.modalButtonText}>Delete</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* New: Delete Creation Confirmation Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={showDeleteCreationModal}
+                onRequestClose={() => setShowDeleteCreationModal(false)}
+            >
+                <Pressable style={styles.modalOverlay} onPress={() => setShowDeleteCreationModal(false)}>
+                    <View style={styles.modalView}>
+                        <Text style={styles.modalTitle}>Delete Story</Text>
+                        <Text style={styles.modalMessage}>
+                            Are you sure you want to delete the story "{creationToDelete?.title}"? This action cannot be undone.
+                        </Text>
+                        <View style={styles.modalButtonContainer}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.cancelButton]}
+                                onPress={() => setShowDeleteCreationModal(false)}
+                            >
+                                <Text style={styles.modalButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.deleteButton]}
+                                onPress={handleDeleteCreation}
                             >
                                 <Text style={styles.modalButtonText}>Delete</Text>
                             </TouchableOpacity>
