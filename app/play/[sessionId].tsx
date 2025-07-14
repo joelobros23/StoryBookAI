@@ -163,6 +163,37 @@ export default function PlayStoryScreen() {
         handleGenerateStoryContinuation(newHistory);
     }
 
+    const handleErase = () => {
+        // Alert if there's nothing to erase (i.e., only the opening entry is left)
+        if (storyContent.length <= 1) {
+            Alert.alert("Cannot Erase", "There is nothing to erase from the story.");
+            return;
+        }
+
+        setStoryContent(prevContent => {
+            let newContent = [...prevContent];
+            const lastEntry = newContent[newContent.length - 1];
+
+            // The most common case: the last entry is an AI response.
+            if (lastEntry.type === 'ai') {
+                newContent.pop(); // Remove the AI response.
+
+                // If the entry before the AI response was a user's action, remove it too.
+                if (newContent.length > 0 && newContent[newContent.length - 1].type === 'user') {
+                    newContent.pop();
+                }
+            }
+            // Less common: user submitted an action but the AI failed to respond.
+            // The last entry is a user entry. We should allow erasing it.
+            else if (lastEntry.type === 'user') {
+                newContent.pop();
+            }
+
+            // After erasing, ensure no entries are marked as 'new' to avoid confusion.
+            return newContent.map(entry => ({ ...entry, isNew: false }));
+        });
+    };
+
     const handleUpdateEntry = () => {
         if (!editingEntry) return;
 
@@ -224,7 +255,7 @@ export default function PlayStoryScreen() {
                 <ActionButton icon="edit" label="Take a Turn" onPress={() => setIsTakingTurn(true)} disabled={isAiThinking} />
                 <ActionButton icon="fast-forward" label="Continue" onPress={handleContinue} disabled={isAiThinking} />
                 <ActionButton icon="rotate-ccw" label="Retry" onPress={() => { /* TODO */ }} disabled={isAiThinking} />
-                <ActionButton icon="delete" label="Erase" onPress={() => { /* TODO */ }} disabled={isAiThinking} />
+                <ActionButton icon="delete" label="Erase" onPress={handleErase} disabled={isAiThinking} />
             </View>
         );
     };
