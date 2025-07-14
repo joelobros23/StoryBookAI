@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 import { getStoryHistory } from '../../lib/history';
-// FIX: Corrected imports to get types from the central types file.
+// FIX: Correctly import all types from the central types file
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
@@ -16,6 +16,7 @@ export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
     
+    // FIX: Use separate state for creations and history to avoid type conflicts
     const [creations, setCreations] = useState<StoryDocument[]>([]);
     const [history, setHistory] = useState<StorySession[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -58,26 +59,9 @@ export default function ProfileScreen() {
         await logout();
     };
 
-    const handleStoryPress = (item: StoryDocument | StorySession) => {
-        const isCreation = activeTab === 'Creations';
-        const storyDoc = isCreation ? (item as StoryDocument) : (item as StorySession).story;
-        const sessionId = isCreation ? null : (item as StorySession).sessionId;
-
-        if (isCreation) {
-            router.push({
-                pathname: `/story-info/[id]`,
-                params: { id: storyDoc.$id }
-            });
-        } else {
-            router.push({
-                pathname: `/play/[sessionId]`,
-                params: { sessionId: sessionId, story: JSON.stringify(storyDoc) }
-            });
-        }
-    };
-
     const renderCreationItem = ({ item }: { item: StoryDocument }) => (
-        <TouchableOpacity style={styles.storyCard} onPress={() => handleStoryPress(item)}>
+        // FIX: Use the correct object syntax for typed routes
+        <TouchableOpacity style={styles.storyCard} onPress={() => router.push({ pathname: `/story-info/[id]`, params: { id: item.$id } })}>
             <View style={styles.storyCardIcon}><Feather name="book" size={24} color="#c792ea" /></View>
             <View style={styles.storyCardTextContainer}>
                 <Text style={styles.storyTitle} numberOfLines={1}>{item.title}</Text>
@@ -90,7 +74,10 @@ export default function ProfileScreen() {
     const renderHistoryItem = ({ item }: { item: StorySession }) => (
         <TouchableOpacity 
             style={styles.storyCard} 
-            onPress={() => handleStoryPress(item)}
+            onPress={() => router.push({
+                pathname: `/play/[sessionId]`,
+                params: { sessionId: item.sessionId, story: JSON.stringify(item.story) }
+            })}
         >
             <View style={styles.storyCardIcon}><Feather name="book-open" size={24} color="#82aaff" /></View>
             <View style={styles.storyCardTextContainer}>

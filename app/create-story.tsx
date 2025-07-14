@@ -15,18 +15,8 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { databaseId, databases, ID, storiesCollectionId } from '../lib/appwrite';
+import { DEFAULT_AI_INSTRUCTIONS } from '../lib/quickstart'; // Import from new central location
 import { StoryDocument } from './types/story';
-
-// --- Constants ---
-const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
-
-Instructions: 
-- Be specific, descriptive, and creative. 
-- Avoid repetition and avoid summarization. 
-- Generally use second person (like this: 'He looks at you.'). But use third person if that's what the story seems to follow. 
-- Never decide or write for the user. If the input ends mid sentence, continue where it left off.
-- > tokens mean a character action attempt. You should describe what happens when the player attempts that action. Generating '###' is forbidden.`;
-
 
 // --- Components ---
 
