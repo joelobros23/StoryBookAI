@@ -2,7 +2,34 @@ import { Alert } from 'react-native';
 import { PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+
+/**
+ * Finds the last complete sentence in a block of text and discards any trailing fragments.
+ * This is useful when an AI response is cut off by token limits.
+ * @param text The raw text from the AI.
+ * @returns The text trimmed to the last complete sentence, or an empty string if no complete sentence is found.
+ */
+const trimToCompleteSentence = (text: string): string => {
+    // Find the last occurrence of a sentence-ending punctuation mark.
+    const lastDot = text.lastIndexOf('.');
+    const lastQuestion = text.lastIndexOf('?');
+    const lastExclamation = text.lastIndexOf('!');
+
+    // Determine the position of the very last punctuation mark.
+    const lastPunctuationIndex = Math.max(lastDot, lastQuestion, lastExclamation);
+
+    if (lastPunctuationIndex > -1) {
+        // If a punctuation mark is found, return the substring up to and including it.
+        // This effectively cuts off any incomplete sentence that follows.
+        return text.substring(0, lastPunctuationIndex + 1);
+    }
+
+    // If no sentence-ending punctuation is found, it means the entire text is a single,
+    // incomplete fragment. In this case, it's better to return nothing.
+    return '';
+};
+
 
 /**
  * Generates the next part of the story using the Gemini API.
@@ -48,7 +75,25 @@ export const generateStoryContinuation = async (
     try {
         const payload = {
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 200, temperature: 0.8, topP: 0.9 }
+            generationConfig: { maxOutputTokens: 200, temperature: 0.8, topP: 0.9 },
+            safetySettings: [
+                {
+                    category: 'HARM_CATEGORY_HARASSMENT',
+                    threshold: 'BLOCK_NONE',
+                },
+                {
+                    category: 'HARM_CATEGORY_HATE_SPEECH',
+                    threshold: 'BLOCK_NONE',
+                },
+                {
+                    category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                    threshold: 'BLOCK_NONE',
+                },
+                {
+                    category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                    threshold: 'BLOCK_NONE',
+                },
+            ]
         };
         const response = await fetch(API_URL, {
             method: 'POST',
@@ -61,14 +106,25 @@ export const generateStoryContinuation = async (
         }
 
         const result = await response.json();
+        const candidate = result.candidates?.[0];
 
-        if (result.candidates && result.candidates.length > 0 && result.candidates[0].content.parts[0].text) {
-            return result.candidates[0].content.parts[0].text.trim();
-        } else {
-            if (result.promptFeedback?.blockReason) {
-                 throw new Error(`Response blocked due to: ${result.promptFeedback.blockReason}`);
+        if (candidate?.content?.parts?.[0]?.text) {
+            const rawText = candidate.content.parts[0].text.trim();
+            const finishReason = candidate.finishReason;
+
+            // If the AI was cut off because it hit the token limit,
+            // we process the text to remove the final, incomplete sentence.
+            if (finishReason === 'MAX_TOKENS') {
+                return trimToCompleteSentence(rawText);
             }
-            throw new Error("Invalid response structure from AI.");
+            
+            // Otherwise, we can assume the response is complete.
+            return rawText;
+
+        } else {
+            // The response was likely blocked or empty.
+            // We've removed the explicit block reason check.
+            throw new Error("Invalid or empty response from AI.");
         }
     } catch (err: any) {
         console.error("AI generation failed:", err);
