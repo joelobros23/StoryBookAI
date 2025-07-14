@@ -28,12 +28,22 @@ export type StoryEntry = {
 };
 
 /**
+ * Defines the player character's data for a session.
+ */
+export type PlayerData = {
+    name?: string;
+    age?: string;
+    gender?: string;
+};
+
+/**
  * Defines the structure for a saved story session in local history,
  * containing the full story document and its chat content.
  */
 export type StorySession = {
     story: StoryDocument;
     content: StoryEntry[];
-    sessionId: string; // FIX: Added missing property
-    sessionDate: string; // FIX: Added missing property
+    sessionId: string;
+    sessionDate: string;
+    playerData?: PlayerData; // Added to store character info
 };

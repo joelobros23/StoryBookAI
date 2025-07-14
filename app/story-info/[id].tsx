@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession } from '../../lib/history';
-import { StoryDocument } from '../types/story'; // FIX: Corrected import path
+import { StoryDocument } from '../types/story';
 
 export default function StoryInfoScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -44,13 +44,22 @@ export default function StoryInfoScreen() {
     const handlePlay = async () => {
         if (!story) return;
         try {
-            // This creates a new, unique session in your local history
             const newSession = await createNewSession(story);
-            // FIX: Navigate to the play screen with the correct typed route syntax
-            router.push({
-                pathname: '/play/[sessionId]',
-                params: { sessionId: newSession.sessionId, story: JSON.stringify(story) }
-            });
+            const needsIntro = story.ask_user_name || story.ask_user_age || story.ask_user_gender;
+
+            if (needsIntro) {
+                // Navigate to the new intro screen if questions are required
+                router.push({
+                    pathname: '../intro/[sessionId]',
+                    params: { sessionId: newSession.sessionId, story: JSON.stringify(story) }
+                });
+            } else {
+                // Otherwise, go directly to the play screen
+                router.push({
+                    pathname: '/play/[sessionId]',
+                    params: { sessionId: newSession.sessionId, story: JSON.stringify(story) }
+                });
+            }
         } catch (error) {
             Alert.alert("Error", "Could not start a new session.");
         }

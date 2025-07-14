@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateStoryContinuation as generateAiResponse } from '../../lib/gemini';
 import { getStorySession, saveStorySessionContent } from '../../lib/history';
-import { StoryDocument, StoryEntry } from '../types/story';
+import { PlayerData, StoryDocument, StoryEntry } from '../types/story';
 
 type InputMode = 'Do' | 'Say' | 'Story';
 
@@ -48,6 +48,7 @@ export default function PlayStoryScreen() {
     const [headerHeight, setHeaderHeight] = useState(0);
     const [story, setStory] = useState<StoryDocument | null>(null);
     const [storyContent, setStoryContent] = useState<StoryEntry[]>([]);
+    const [playerData, setPlayerData] = useState<PlayerData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isTakingTurn, setIsTakingTurn] = useState(false);
     const [isAiThinking, setIsAiThinking] = useState(false);
@@ -88,10 +89,17 @@ export default function PlayStoryScreen() {
                 setStory(storyData);
                 
                 const savedSession = await getStorySession(sessionId);
-                if (savedSession && savedSession.content.length > 0) {
-                    setStoryContent(savedSession.content);
+                if (savedSession) {
+                    if (savedSession.content.length > 0) {
+                        setStoryContent(savedSession.content);
+                    } else if (storyData.opening) {
+                        setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
+                    }
+                    if (savedSession.playerData) {
+                        setPlayerData(savedSession.playerData);
+                    }
                 } else if (storyData.opening) {
-                    setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
+                     setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
                 }
             } catch (e) {
                 console.error("Failed to load story session:", e);
@@ -115,7 +123,7 @@ export default function PlayStoryScreen() {
     const handleGenerateStoryContinuation = async (currentHistory: StoryEntry[], action?: string) => {
         if (!story) return;
         setIsAiThinking(true);
-        const aiText = await generateAiResponse(story, currentHistory, action);
+        const aiText = await generateAiResponse(story, currentHistory, playerData || undefined, action);
         if (aiText) {
             setStoryContent(prev => {
                 const oldContent = prev.map(entry => ({ ...entry, isNew: false }));

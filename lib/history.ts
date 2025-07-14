@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { StoryDocument, StoryEntry, StorySession } from '../app/types/story';
-import { ID } from './appwrite'; // Import ID for unique session IDs
+import { PlayerData, StoryDocument, StoryEntry, StorySession } from '../app/types/story';
+import { ID } from './appwrite';
 
 const HISTORY_KEY = 'story_history';
 
@@ -45,8 +45,9 @@ export const createNewSession = async (story: StoryDocument): Promise<StorySessi
     const newSession: StorySession = {
         story: story,
         content: [],
-        sessionId: ID.unique(), // Generate a unique ID for this new session
-        sessionDate: new Date().toISOString(), // Add a timestamp
+        sessionId: ID.unique(),
+        sessionDate: new Date().toISOString(),
+        playerData: {}, // Initialize with empty object
     };
     const updatedHistory = [newSession, ...history];
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
@@ -63,10 +64,28 @@ export const saveStorySessionContent = async (sessionId: string, content: StoryE
 
         if (sessionIndex !== -1) {
             history[sessionIndex].content = content.map(({isNew, ...rest}) => rest);
-            history[sessionIndex].sessionDate = new Date().toISOString(); // Update timestamp on save
+            history[sessionIndex].sessionDate = new Date().toISOString();
             await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
         }
     } catch (e) {
         console.error("Failed to save session content.", e);
+    }
+};
+
+/**
+ * Saves player data for a specific story session.
+ */
+export const saveSessionPlayerData = async (sessionId: string, playerData: PlayerData) => {
+    try {
+        const history = await getStoryHistory();
+        const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
+
+        if (sessionIndex !== -1) {
+            history[sessionIndex].playerData = playerData;
+            history[sessionIndex].sessionDate = new Date().toISOString(); // Also update timestamp
+            await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        }
+    } catch (e) {
+        console.error("Failed to save session player data.", e);
     }
 };

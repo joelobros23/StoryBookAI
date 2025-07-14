@@ -1,9 +1,6 @@
 import { Alert } from 'react-native';
-import { StoryDocument, StoryEntry } from '../app/types/story';
+import { PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
 
-// --- Gemini API Configuration ---
-// It's best practice to use environment variables for sensitive data.
-// Make sure you have EXPO_PUBLIC_GEMINI_API_KEY in a .env file.
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
@@ -11,12 +8,14 @@ const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-
  * Generates the next part of the story using the Gemini API.
  * @param story - The core story document with instructions and summary.
  * @param currentHistory - The existing story entries (user and AI turns).
+ * @param playerData - Optional data about the player character.
  * @param action - The latest action or input from the user.
  * @returns The new AI-generated text, or null if an error occurs.
  */
 export const generateStoryContinuation = async (
     story: StoryDocument,
     currentHistory: StoryEntry[],
+    playerData?: PlayerData,
     action?: string
 ): Promise<string | null> => {
     if (!API_KEY) {
@@ -26,8 +25,19 @@ export const generateStoryContinuation = async (
 
     const historyText = currentHistory.map(entry => entry.text).join('\n\n');
 
-    // **FIX:** Added a clear instruction to the prompt for the AI.
+    let playerInfo = '';
+    if (playerData) {
+        const parts = [];
+        if (playerData.name) parts.push(`the player's name is ${playerData.name}`);
+        if (playerData.gender) parts.push(`their gender is ${playerData.gender}`);
+        if (playerData.age) parts.push(`their age is ${playerData.age}`);
+        if (parts.length > 0) {
+            playerInfo = `Remember these key details about the main character: ${parts.join(', ')}. Refer to them in the story when relevant.`;
+        }
+    }
+
     const prompt = `${story.ai_instruction || ''}
+    ${playerInfo}
     **IMPORTANT RULE:** Your response must be a complete thought. Do not end your response with a partial sentence or phrase. Always finish the paragraph.
     **Story Summary:** ${story.story_summary || 'Not provided.'}
     **Plot Essentials (Memory):** ${story.plot_essentials || 'Not provided.'}
@@ -38,7 +48,6 @@ export const generateStoryContinuation = async (
     try {
         const payload = {
             contents: [{ parts: [{ text: prompt }] }],
-            // **FIX:** Increased maxOutputTokens to give the AI more space to write.
             generationConfig: { maxOutputTokens: 200, temperature: 0.8, topP: 0.9 }
         };
         const response = await fetch(API_URL, {
