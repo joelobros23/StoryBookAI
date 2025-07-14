@@ -2,7 +2,7 @@ import { Alert } from 'react-native';
 import { PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
 /**
  * Finds the last complete sentence in a block of text and discards any trailing fragments.

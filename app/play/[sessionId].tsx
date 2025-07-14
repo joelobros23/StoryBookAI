@@ -5,6 +5,8 @@ import {
     ActivityIndicator,
     Keyboard,
     LayoutChangeEvent,
+    Modal,
+    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -56,6 +58,7 @@ export default function PlayStoryScreen() {
     const [inputMode, setInputMode] = useState<InputMode>('Do');
     const [isSelectingMode, setIsSelectingMode] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [editingEntry, setEditingEntry] = useState<{ index: number; text: string } | null>(null);
     
     const handleHeaderLayout = (event: LayoutChangeEvent) => {
         const { height } = event.nativeEvent.layout;
@@ -90,16 +93,18 @@ export default function PlayStoryScreen() {
                 
                 const savedSession = await getStorySession(sessionId);
                 if (savedSession) {
-                    if (savedSession.content.length > 0) {
-                        setStoryContent(savedSession.content);
+                    // Ensure all entries have a unique ID
+                    const contentWithIds = savedSession.content.map((entry, index) => ({ ...entry, id: entry.id || `${Date.now()}-${index}` }));
+                    if (contentWithIds.length > 0) {
+                        setStoryContent(contentWithIds);
                     } else if (storyData.opening) {
-                        setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
+                        setStoryContent([{ id: Date.now().toString(), type: 'ai', text: storyData.opening, isNew: true }]);
                     }
                     if (savedSession.playerData) {
                         setPlayerData(savedSession.playerData);
                     }
                 } else if (storyData.opening) {
-                     setStoryContent([{ type: 'ai', text: storyData.opening, isNew: true }]);
+                     setStoryContent([{ id: Date.now().toString(), type: 'ai', text: storyData.opening, isNew: true }]);
                 }
             } catch (e) {
                 console.error("Failed to load story session:", e);
@@ -127,7 +132,7 @@ export default function PlayStoryScreen() {
         if (aiText) {
             setStoryContent(prev => {
                 const oldContent = prev.map(entry => ({ ...entry, isNew: false }));
-                const newEntry: StoryEntry = { type: 'ai', text: aiText, isNew: true };
+                const newEntry: StoryEntry = { id: Date.now().toString(), type: 'ai', text: aiText, isNew: true };
                 return [...oldContent, newEntry];
             });
         }
@@ -143,7 +148,7 @@ export default function PlayStoryScreen() {
             case 'Story': userTurnText = userInput.trim(); actionForAI = userInput.trim(); break;
             default: userTurnText = `> ${userInput.trim()}`; actionForAI = `> You ${userInput.trim()}`; break;
         }
-        const newUserEntry: StoryEntry = { type: 'user', text: userTurnText };
+        const newUserEntry: StoryEntry = { id: Date.now().toString(), type: 'user', text: userTurnText };
         const newHistory = [...storyContent.map(entry => ({...entry, isNew: false })), newUserEntry];
         setStoryContent(newHistory);
         handleGenerateStoryContinuation(newHistory, actionForAI);
@@ -158,13 +163,30 @@ export default function PlayStoryScreen() {
         handleGenerateStoryContinuation(newHistory);
     }
 
+    const handleUpdateEntry = () => {
+        if (!editingEntry) return;
+
+        const updatedContent = [...storyContent];
+        updatedContent[editingEntry.index] = {
+            ...updatedContent[editingEntry.index],
+            text: editingEntry.text,
+            isNew: false,
+        };
+
+        setStoryContent(updatedContent);
+        setEditingEntry(null); // Close the modal
+    };
+
+
     const renderContent = () => {
         if (isLoading) return <ActivityIndicator size="large" color="#c792ea" style={styles.centered} />;
         if (error) return <Text style={[styles.storyText, styles.centered, { color: '#ff6b6b' }]}>{error}</Text>;
         return (
             <>
                 {storyContent.map((entry, index) => (
-                     <FormattedText key={`${index}-${entry.text.slice(0, 10)}`} text={entry.text} style={entry.type === 'user' ? styles.userText : styles.storyText} isNew={entry.isNew} />
+                     <Pressable key={entry.id} onLongPress={() => setEditingEntry({ index, text: entry.text })}>
+                        <FormattedText text={entry.text} style={entry.type === 'user' ? styles.userText : styles.storyText} isNew={entry.isNew} />
+                    </Pressable>
                 ))}
                 {isAiThinking && <ActivityIndicator style={{ marginVertical: 15 }} color="#c792ea" />}
             </>
@@ -220,6 +242,42 @@ export default function PlayStoryScreen() {
                 </ScrollView>
                 <View style={[styles.inputWrapper, { paddingBottom: keyboardHeight }]}>{renderInputArea()}</View>
             </View>
+
+            {editingEntry && (
+                <Modal
+                    animationType="slide"
+                    transparent={true}
+                    visible={editingEntry !== null}
+                    onRequestClose={() => setEditingEntry(null)}
+                >
+                    <View style={styles.modalContainer}>
+                        <View style={styles.modalView}>
+                            <Text style={styles.modalTitle}>Edit Entry</Text>
+                            <TextInput
+                                style={styles.editInput}
+                                value={editingEntry.text}
+                                onChangeText={(text) => setEditingEntry({ ...editingEntry, text })}
+                                multiline
+                                autoFocus
+                            />
+                            <View style={styles.modalButtonContainer}>
+                                <TouchableOpacity
+                                    style={[styles.modalButton, styles.cancelButton]}
+                                    onPress={() => setEditingEntry(null)}
+                                >
+                                    <Text style={styles.modalButtonText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.modalButton, styles.saveButton]}
+                                    onPress={handleUpdateEntry}
+                                >
+                                    <Text style={styles.modalButtonText}>Save</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
+            )}
         </SafeAreaView>
     );
 }
@@ -251,4 +309,72 @@ const styles = StyleSheet.create({
     actionButton: { alignItems: 'center', padding: 10, borderRadius: 8 },
     actionButtonText: { color: '#e0e0e0', fontSize: 12, marginTop: 4 },
     disabledButton: { opacity: 0.5 },
+    // Modal Styles
+    modalContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    },
+    modalView: {
+        margin: 20,
+        backgroundColor: '#1e1e1e',
+        borderRadius: 20,
+        padding: 35,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 5,
+        width: '90%',
+    },
+    modalTitle: {
+        marginBottom: 15,
+        textAlign: 'center',
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+    },
+    editInput: {
+        width: '100%',
+        minHeight: 100,
+        maxHeight: 300,
+        backgroundColor: '#2a2a2a',
+        color: '#FFFFFF',
+        borderRadius: 10,
+        padding: 15,
+        fontSize: 16,
+        textAlignVertical: 'top',
+        marginBottom: 20,
+    },
+    modalButtonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
+    modalButton: {
+        borderRadius: 10,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        elevation: 2,
+        flex: 1,
+        marginHorizontal: 5,
+        alignItems: 'center',
+    },
+    saveButton: {
+        backgroundColor: '#c792ea',
+    },
+    cancelButton: {
+        backgroundColor: '#333',
+    },
+    modalButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        textAlign: 'center',
+        fontSize: 16,
+    },
 });
