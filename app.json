@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "StoryBook AI",
-    "slug": "storybook-ai",
+    "slug": "storybookai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -42,7 +42,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f8c9f594-49db-4f42-9612-cee0f51b1f6e"
+        "projectId": "ee43badc-ccc9-4d43-b49c-bc3cb13fe720"
       }
     }
   }
