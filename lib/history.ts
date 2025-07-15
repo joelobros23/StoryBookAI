@@ -35,6 +35,25 @@ export const getStorySession = async (sessionId: string): Promise<StorySession |
     }
 };
 
+// Add this function to history.ts
+export const updateStoryInSession = async (sessionId: string, updatedStory: StoryDocument) => {
+  try {
+    const history = await getStoryHistory();
+    const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
+
+    if (sessionIndex !== -1) {
+      history[sessionIndex].story = updatedStory;
+      history[sessionIndex].sessionDate = new Date().toISOString();
+      await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error("Failed to update story in session:", e);
+    return false;
+  }
+};
+
 /**
  * Creates a new, unique session for a story and saves it.
  * @param story - The base story document.

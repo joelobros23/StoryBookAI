@@ -1,8 +1,9 @@
 import { Feather } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Keyboard,
     LayoutChangeEvent,
     Modal,
@@ -35,13 +36,6 @@ const FormattedText = ({ text, style, isNew = false }: { text: string; style: an
     );
 };
 
-const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; disabled?: boolean }) => (
-    <TouchableOpacity style={[styles.actionButton, disabled && styles.disabledButton]} onPress={onPress} disabled={disabled}>
-        <Feather name={icon} size={18} color={disabled ? "#666" : "#e0e0e0"} />
-        <Text style={[styles.actionButtonText, disabled && { color: "#666"}]}>{label}</Text>
-    </TouchableOpacity>
-);
-
 export default function PlayStoryScreen() {
     const { sessionId, story: storyString } = useLocalSearchParams<{ sessionId: string; story?: string }>();
     const router = useRouter();
@@ -65,6 +59,17 @@ export default function PlayStoryScreen() {
         setHeaderHeight(height);
     };
 
+    const handleSettingsPress = () => {
+        if (!story || !sessionId) return;
+        router.push({
+            pathname: './edit-story',
+            params: { 
+                sessionId, 
+                story: JSON.stringify(story) 
+            }
+        });
+    };
+
     useEffect(() => {
         const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
         const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
@@ -73,6 +78,19 @@ export default function PlayStoryScreen() {
             keyboardDidHideListener.remove();
         };
     }, []);
+
+    useFocusEffect(
+        React.useCallback(() => {
+            const reloadStory = async () => {
+                if (!sessionId) return;
+                const session = await getStorySession(sessionId);
+                if (session?.story) {
+                    setStory(session.story);
+                }
+            };
+            reloadStory();
+        }, [sessionId])
+    );
 
     useEffect(() => {
         const loadStory = async () => {
@@ -208,6 +226,17 @@ export default function PlayStoryScreen() {
         setEditingEntry(null); // Close the modal
     };
 
+    // Move ActionButton inside the component
+    const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; disabled?: boolean }) => (
+        <TouchableOpacity 
+            style={[styles.actionButton, disabled && styles.disabledButton]} 
+            onPress={onPress} 
+            disabled={disabled}
+        >
+            <Feather name={icon} size={18} color={disabled ? "#666" : "#e0e0e0"} />
+            <Text style={[styles.actionButtonText, disabled && { color: "#666"}]}>{label}</Text>
+        </TouchableOpacity>
+    );
 
     const renderContent = () => {
         if (isLoading) return <ActivityIndicator size="large" color="#c792ea" style={styles.centered} />;
@@ -265,7 +294,13 @@ export default function PlayStoryScreen() {
             <View style={styles.header} onLayout={handleHeaderLayout}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isAiThinking}><Feather name="chevron-left" size={28} color="#FFFFFF" /></TouchableOpacity>
                 <Text style={styles.headerTitle} numberOfLines={1}>{isLoading ? 'Loading...' : story?.title || 'Story'}</Text>
-                <TouchableOpacity style={styles.settingsButton} disabled={isAiThinking}><Feather name="settings" size={24} color="#FFFFFF" /></TouchableOpacity>
+                <TouchableOpacity 
+                    style={styles.settingsButton} 
+                    onPress={handleSettingsPress} 
+                    disabled={isAiThinking}
+                >
+                    <Feather name="settings" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
             </View>
             <View style={styles.flexContainer}>
                 <ScrollView ref={scrollViewRef} style={styles.storyScrollView} contentContainerStyle={styles.storyContainer} keyboardDismissMode="interactive">
