@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "StoryBookAI",
-    "slug": "StoryBookAI",
+    "name": "StoryBook AI",
+    "slug": "storybook-ai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -16,7 +16,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.joelobros23.storybookai"
     },
     "web": {
       "bundler": "metro",
@@ -37,6 +38,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f8c9f594-49db-4f42-9612-cee0f51b1f6e"
+      }
     }
   }
 }
