@@ -9,7 +9,6 @@ import {
   View
 } from 'react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-
 const InitialLayout = () => {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
