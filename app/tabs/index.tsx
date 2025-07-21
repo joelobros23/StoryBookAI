@@ -118,7 +118,7 @@ export default function HomeScreen() {
               let creatorName = 'Unknown';
               try {
                 if (doc.userId) {
-                  const creator = await account.get(doc.userId);
+                  const creator = await account.get();
                   creatorName = creator.name;
                 }
               } catch (e) {
