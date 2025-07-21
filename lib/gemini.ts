@@ -3,6 +3,9 @@ import { PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+// FIX: Switched to the generateContent endpoint for the image model.
+const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${API_KEY}`;
+
 
 /**
  * Finds the last complete sentence in a block of text and discards any trailing fragments.
@@ -129,6 +132,63 @@ export const generateStoryContinuation = async (
     } catch (err: any) {
         console.error("AI generation failed:", err);
         Alert.alert("AI Error", err.message || "The AI failed to generate a response. Please try again.");
+        return null;
+    }
+};
+
+// NEW: Function to generate an image from a text prompt
+export const generateImageFromPrompt = async (prompt: string): Promise<string | null> => {
+    if (!API_KEY) {
+        Alert.alert("API Key Missing", "The Gemini API key is not configured.");
+        return null;
+    }
+    
+    console.log("Generating image with prompt:", prompt);
+    console.log("Using model: gemini-2.0-flash-preview-image-generation");
+
+    try {
+        // FIX: The payload structure has been updated to match the reference code exactly.
+        // This includes adding `role: "user"` and using camelCase `responseModalities` with both "IMAGE" and "TEXT".
+        const payload = {
+            contents: [{
+                role: "user",
+                parts: [{ text: prompt }]
+            }],
+            generationConfig: {
+                responseModalities: ["IMAGE", "TEXT"]
+            }
+        };
+
+        const response = await fetch(IMAGE_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.json();
+            console.error("Image API Error Body:", errorBody);
+            throw new Error(`Image API request failed with status ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        const candidate = result.candidates?.[0];
+        // FIX: Find the part that contains the image data specifically.
+        const imagePart = candidate?.content?.parts?.find(p => p.inlineData);
+
+        if (imagePart?.inlineData?.data) {
+            return imagePart.inlineData.data;
+        } else {
+            if (candidate?.finishReason === 'SAFETY') {
+                throw new Error("The prompt was blocked for safety reasons. Please try a different prompt.");
+            }
+            console.error("Invalid response from Image API:", result);
+            throw new Error("Invalid or empty response from Image AI. The prompt may have been blocked.");
+        }
+    } catch (err: any) {
+        console.error("Image generation failed:", err);
+        Alert.alert("Image Generation Error", err.message || "The AI failed to generate an image. Please try again.");
         return null;
     }
 };

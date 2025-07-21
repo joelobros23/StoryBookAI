@@ -38,9 +38,9 @@ const InitialLayout = () => {
       return; // Do nothing until both are ready
     }
 
-    // --- FIX: Allow navigation to other authenticated routes besides '/tabs' ---
-    // Check if the user is currently in a valid, authenticated part of the app.
-    const allowedAppRoutes = ['tabs', 'intro', 'play'];
+    // FIX: Added 'create-story' to the list of allowed routes.
+    // This prevents the layout from redirecting away from the create story screen after navigation.
+    const allowedAppRoutes = ['tabs', 'intro', 'play', 'create-story'];
     const inApp = segments.length > 0 && allowedAppRoutes.includes(segments[0] as string);
 
     // If the user is logged in but not in a valid app route, redirect them to the main screen.

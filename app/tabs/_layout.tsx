@@ -47,9 +47,12 @@ type PlayButtonModalProps = {
 
 const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProps) => {
   const router = useRouter();
+  // FIX: Swapped the order of router.push() and onClose().
+  // This prevents a race condition where updating the modal's state
+  // interferes with the navigation action.
   const handleNavigate = (path: '/create-story' | '/tabs/profile') => {
-    onClose();
     router.push(path);
+    onClose();
   };
   return (
     <Modal animationType="slide" transparent={true} visible={visible} onRequestClose={onClose}>

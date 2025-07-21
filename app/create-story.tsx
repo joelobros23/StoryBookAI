@@ -1,10 +1,10 @@
 import { Feather } from '@expo/vector-icons';
-import { Models } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Image,
     ScrollView,
     StyleSheet,
     Switch,
@@ -14,9 +14,11 @@ import {
     View,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { databaseId, databases, ID, storiesCollectionId } from '../lib/appwrite';
-import { DEFAULT_AI_INSTRUCTIONS } from '../lib/quickstart'; // Import from new central location
-import { StoryDocument } from './types/story';
+// NEW: Import storage functions
+import { databaseId, databases, ID, storiesCollectionId, uploadImageFile } from '../lib/appwrite';
+// NEW: Import image generation function
+import { generateImageFromPrompt } from '../lib/gemini';
+import { DEFAULT_AI_INSTRUCTIONS } from '../lib/quickstart';
 
 // --- Components ---
 
@@ -82,6 +84,10 @@ export default function CreateStoryScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
+  // NEW: State for image generation
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null); // Base64 string
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // State for Plot Tab
   const [opening, setOpening] = useState('');
@@ -91,6 +97,27 @@ export default function CreateStoryScreen() {
   const [askName, setAskName] = useState(false);
   const [askAge, setAskAge] = useState(false);
   const [askGender, setAskGender] = useState(false);
+
+  // NEW: Handle image generation
+  const handleGenerateImage = async () => {
+    if (!imagePrompt) {
+        Alert.alert("Prompt missing", "Please enter a prompt for the image.");
+        return;
+    }
+    setIsGeneratingImage(true);
+    setGeneratedImage(null); // Clear previous image
+    try {
+        const base64 = await generateImageFromPrompt(imagePrompt);
+        if (base64) {
+            setGeneratedImage(base64);
+        }
+    } catch (error) {
+        // Alert is handled in the gemini.ts file
+        console.error(error);
+    } finally {
+        setIsGeneratingImage(false);
+    }
+  };
 
   const handleCreateStory = async () => {
     if (!user) {
@@ -105,21 +132,33 @@ export default function CreateStoryScreen() {
 
     setIsLoading(true);
 
-    const storyData: Omit<StoryDocument, keyof Models.Document> = {
-        title,
-        description,
-        tags,
-        opening,
-        ai_instruction: aiInstructions,
-        story_summary: storySummary,
-        plot_essentials: plotEssentials,
-        ask_user_name: askName,
-        ask_user_age: askAge,
-        ask_user_gender: askGender,
-        userId: user.$id,
-    };
-
     try {
+        let uploadedImageId: string | undefined = undefined;
+        // NEW: Upload image if it exists before creating the document
+        if (generatedImage) {
+            console.log("Uploading generated image...");
+            const fileName = `${title.replace(/\s+/g, '_')}_${Date.now()}.png`;
+            uploadedImageId = await uploadImageFile(generatedImage, fileName);
+            console.log("Image uploaded with ID:", uploadedImageId);
+        }
+
+        // FIX: Removed the explicit and complex type from this object.
+        // TypeScript will infer the type correctly, resolving the error.
+        const storyData = {
+            title,
+            description,
+            tags,
+            opening,
+            ai_instruction: aiInstructions,
+            story_summary: storySummary,
+            plot_essentials: plotEssentials,
+            ask_user_name: askName,
+            ask_user_age: askAge,
+            ask_user_gender: askGender,
+            userId: user.$id,
+            cover_image_id: uploadedImageId,
+        };
+
         const newStoryDocument = await databases.createDocument(
             databaseId,
             storiesCollectionId,
@@ -144,7 +183,7 @@ export default function CreateStoryScreen() {
 
   return (
     <View style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.container}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isLoading}>
                     <Feather name="chevron-left" size={28} color="#FFFFFF" />
@@ -170,6 +209,38 @@ export default function CreateStoryScreen() {
                     <FormInput label="Title" value={title} onChangeText={setTitle} placeholder="The Lost Amulet of Gorgon" />
                     <FormInput label="Description" value={description} onChangeText={setDescription} placeholder="A short summary about your story's theme and setting." multiline height={120} />
                     <FormInput label="Tags" value={tags} onChangeText={setTags} placeholder="fantasy, magic, adventure" />
+                    
+                    {/* --- NEW IMAGE GENERATION SECTION --- */}
+                    <View style={styles.imageGenContainer}>
+                        <Text style={styles.label}>Cover Image (Optional)</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={imagePrompt}
+                            onChangeText={setImagePrompt}
+                            placeholder="e.g., A mystical amulet glowing in a dark cave"
+                            placeholderTextColor="#666"
+                        />
+                        <TouchableOpacity 
+                            style={[styles.generateButton, (!imagePrompt || isGeneratingImage) && styles.disabledButton]} 
+                            onPress={handleGenerateImage}
+                            disabled={!imagePrompt || isGeneratingImage}
+                        >
+                            {isGeneratingImage ? (
+                                <ActivityIndicator color="#FFFFFF" />
+                            ) : (
+                                <Text style={styles.generateButtonText}>Generate Image</Text>
+                            )}
+                        </TouchableOpacity>
+                        {generatedImage && (
+                            <View style={styles.imagePreviewContainer}>
+                                <Image 
+                                    source={{ uri: `data:image/png;base64,${generatedImage}` }} 
+                                    style={styles.imagePreview}
+                                />
+                            </View>
+                        )}
+                    </View>
+
                 </View>
             ) : (
                 <View style={styles.formContainer}>
@@ -192,7 +263,7 @@ export default function CreateStoryScreen() {
                 </View>
             )}
 
-            <TouchableOpacity style={styles.createButton} onPress={handleCreateStory} disabled={isLoading}>
+            <TouchableOpacity style={styles.createButton} onPress={handleCreateStory} disabled={isLoading || isGeneratingImage}>
                 {isLoading ? (
                     <ActivityIndicator color="#FFFFFF" />
                 ) : (
@@ -267,6 +338,7 @@ const styles = StyleSheet.create({
     label: {
         color: '#a9a9a9',
         fontSize: 14,
+        marginBottom: 8,
     },
     defaultButton: {
         paddingHorizontal: 10,
@@ -314,5 +386,41 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 18,
         fontWeight: 'bold',
+    },
+    // NEW Styles for image generation
+    imageGenContainer: {
+        marginTop: 10,
+        paddingTop: 20,
+        borderTopWidth: 1,
+        borderTopColor: '#333',
+    },
+    generateButton: {
+        backgroundColor: '#c792ea',
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 10,
+    },
+    generateButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    disabledButton: {
+        backgroundColor: '#333',
+    },
+    imagePreviewContainer: {
+        marginTop: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#2a2a2a',
+        borderRadius: 8,
+        padding: 10,
+    },
+    imagePreview: {
+        width: 256,
+        height: 256,
+        borderRadius: 8,
     },
 });
