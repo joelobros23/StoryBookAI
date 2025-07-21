@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { PlayerData, StoryDocument, StoryEntry, StorySession } from '../app/types/story';
-// FIX: Import the new download function
 import { downloadAndSaveImage, ID } from './appwrite';
 
 const HISTORY_KEY = 'story_history';
@@ -37,7 +36,6 @@ export const getStorySession = async (sessionId: string): Promise<StorySession |
     }
 };
 
-// Add this function to history.ts
 export const updateStoryInSession = async (sessionId: string, updatedStory: StoryDocument) => {
   try {
     const history = await getStoryHistory();
@@ -61,10 +59,9 @@ export const updateStoryInSession = async (sessionId: string, updatedStory: Stor
  * @param story - The base story document.
  * @returns The newly created session.
  */
-export const createNewSession = async (story: StoryDocument & { cover_image_id?: string }): Promise<StorySession> => {
+export const createNewSession = async (story: StoryDocument): Promise<StorySession> => {
     const history = await getStoryHistory();
     
-    // FIX: Download the cover image if it exists
     let localCoverImagePath: string | null = null;
     if (story.cover_image_id) {
         localCoverImagePath = await downloadAndSaveImage(story.cover_image_id);
@@ -76,7 +73,6 @@ export const createNewSession = async (story: StoryDocument & { cover_image_id?:
         sessionId: ID.unique(),
         sessionDate: new Date().toISOString(),
         playerData: {},
-        // FIX: Add the local image path to the session object
         localCoverImagePath: localCoverImagePath || undefined,
     };
     const updatedHistory = [newSession, ...history];
@@ -120,6 +116,22 @@ export const saveSessionPlayerData = async (sessionId: string, playerData: Playe
     }
 };
 
+// NEW: Function to update only the cover image of a session
+export const updateSessionCoverImage = async (sessionId: string, newImagePath: string | null) => {
+    try {
+        const history = await getStoryHistory();
+        const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
+
+        if (sessionIndex !== -1) {
+            history[sessionIndex].localCoverImagePath = newImagePath || undefined;
+            await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+            console.log(`Updated cover image for session ${sessionId}`);
+        }
+    } catch (e) {
+        console.error("Failed to update session cover image.", e);
+    }
+};
+
 /**
  * Deletes a story session from local history.
  * @param sessionId - The ID of the session to delete.
@@ -128,14 +140,16 @@ export const deleteStorySession = async (sessionId: string) => {
     try {
         const history = await getStoryHistory();
         
-        // FIX: Find the session to delete to check for a local image
+        // Finds the session to be deleted
         const sessionToDelete = history.find(session => session.sessionId === sessionId);
+        
+        // Checks if a local image path exists and deletes the file
         if (sessionToDelete && sessionToDelete.localCoverImagePath) {
-            // Delete the local image file to clean up storage
             await FileSystem.deleteAsync(sessionToDelete.localCoverImagePath, { idempotent: true });
             console.log(`Local image ${sessionToDelete.localCoverImagePath} deleted.`);
         }
 
+        // Removes the session from the history array
         const updatedHistory = history.filter(session => session.sessionId !== sessionId);
         await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
         console.log(`Session with ID ${sessionId} deleted.`);
