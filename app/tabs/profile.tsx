@@ -5,25 +5,30 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
+// FIX: Import the new deleteImageFile function
+import { databaseId, databases, deleteImageFile, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession, deleteStorySession, getStoryHistory } from '../../lib/history';
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
 type SortOrder = 'Recent' | 'Oldest';
 
+// FIX: Define a more specific type for creations that includes the optional cover image ID
+type CreationStory = StoryDocument & { cover_image_id?: string };
+
 export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
     
-    const [creations, setCreations] = useState<StoryDocument[]>([]);
+    const [creations, setCreations] = useState<CreationStory[]>([]);
     const [history, setHistory] = useState<StorySession[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null);
     const [showDeleteCreationModal, setShowDeleteCreationModal] = useState(false);
-    const [creationToDelete, setCreationToDelete] = useState<StoryDocument | null>(null);
+    // FIX: Use the more specific CreationStory type for the item to be deleted
+    const [creationToDelete, setCreationToDelete] = useState<CreationStory | null>(null);
     const [sortOrder, setSortOrder] = useState<SortOrder>('Recent');
 
     useEffect(() => {
@@ -32,7 +37,7 @@ export default function ProfileScreen() {
             setIsLoading(true);
             try {
                 const response = await databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('userId', user.$id), Query.orderDesc('$createdAt')]);
-                setCreations(response.documents as (StoryDocument & { cover_image_id?: string })[]);
+                setCreations(response.documents as CreationStory[]);
             } catch (error) {
                 Alert.alert("Error", "Could not fetch your creations.");
             } finally {
@@ -123,7 +128,14 @@ export default function ProfileScreen() {
         if (creationToDelete) {
             setIsLoading(true);
             try {
+                // FIX: Check for a cover image and delete it from storage first.
+                if (creationToDelete.cover_image_id) {
+                    await deleteImageFile(creationToDelete.cover_image_id);
+                }
+                
+                // Then, delete the story document from the database.
                 await databases.deleteDocument(databaseId, storiesCollectionId, creationToDelete.$id);
+                
                 setCreations(prevCreations => prevCreations.filter(c => c.$id !== creationToDelete.$id));
                 Alert.alert("Success", "Story deleted successfully.");
             } catch (error) {
@@ -137,7 +149,7 @@ export default function ProfileScreen() {
         }
     };
 
-    const renderCreationItem = ({ item }: { item: StoryDocument & { cover_image_id?: string } }) => (
+    const renderCreationItem = ({ item }: { item: CreationStory }) => (
         <TouchableOpacity 
             style={styles.storyCard} 
             onPress={() => handleStartCreation(item)}
@@ -316,16 +328,14 @@ const styles = StyleSheet.create({
     activeTab: { borderBottomColor: '#c792ea' },
     tabText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
     tabContent: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
-    // FIX: Updated card styles for full-width image
     storyCard: { 
         flexDirection: 'row', 
         alignItems: 'center', 
         backgroundColor: '#2a2a2a', 
         borderRadius: 10, 
         marginBottom: 10,
-        overflow: 'hidden', // Clip image corners
+        overflow: 'hidden',
     },
-    // FIX: Updated icon styles
     storyCardIcon: { 
         width: 80,
         height: 80,
@@ -333,17 +343,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         backgroundColor: '#333',
     },
-    // FIX: Updated image styles
     storyCardImage: {
         width: 80,
         height: 80,
         backgroundColor: '#333',
     },
-    // FIX: Updated text container styles
     storyCardTextContainer: { 
         flex: 1,
         paddingHorizontal: 15,
-        paddingVertical: 15, // Ensure text has vertical padding
+        paddingVertical: 15,
     },
     storyTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
     storyDescription: { color: '#a9a9a9', fontSize: 14, marginTop: 4 },
