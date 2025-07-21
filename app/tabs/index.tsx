@@ -1,11 +1,10 @@
 import { Feather } from '@expo/vector-icons';
 import { Query } from 'appwrite';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-// FIX: Import the Account service to fetch user names
 import { account, databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession } from '../../lib/history';
 import { handleQuickStart } from '../../lib/quickstart';
@@ -85,7 +84,6 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
   );
 };
 
-// FIX: Add creatorName to the story type for display
 type StoryWithCreator = StoryDocument & { cover_image_id?: string; creatorName?: string };
 
 export default function HomeScreen() {
@@ -97,43 +95,54 @@ export default function HomeScreen() {
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  useEffect(() => {
-    const fetchAllStories = async () => {
-      setIsLoading(true);
-      try {
-        const response = await databases.listDocuments(
-          databaseId,
-          storiesCollectionId,
-          [Query.orderDesc('$createdAt')]
-        );
-        
-        // FIX: Fetch the creator's name for each story
-        const storiesWithCreators = await Promise.all(
-          response.documents.map(async (doc) => {
-            let creatorName = 'Unknown';
-            try {
-              if (doc.userId) {
-                const creator = await account.get(doc.userId);
-                creatorName = creator.name;
+  // FIX: Replaced useEffect with useFocusEffect to prevent race conditions on login/logout.
+  // This ensures data is fetched only when the screen is fully focused and the user session is stable.
+  useFocusEffect(
+    useCallback(() => {
+      const fetchAllStories = async () => {
+        if (!user) {
+          setAllStories([]);
+          setIsLoading(false);
+          return;
+        }
+        setIsLoading(true);
+        try {
+          const response = await databases.listDocuments(
+            databaseId,
+            storiesCollectionId,
+            [Query.orderDesc('$createdAt')]
+          );
+          
+          const storiesWithCreators = await Promise.all(
+            response.documents.map(async (doc) => {
+              let creatorName = 'Unknown';
+              try {
+                if (doc.userId) {
+                  const creator = await account.get(doc.userId);
+                  creatorName = creator.name;
+                }
+              } catch (e) {
+                console.error(`Failed to fetch user ${doc.userId}`, e);
               }
-            } catch (e) {
-              console.error(`Failed to fetch user ${doc.userId}`, e);
-            }
-            return { ...doc, creatorName } as StoryWithCreator;
-          })
-        );
-        
-        setAllStories(storiesWithCreators);
+              return { ...doc, creatorName } as StoryWithCreator;
+            })
+          );
+          
+          setAllStories(storiesWithCreators);
 
-      } catch (error) {
-        console.error("Failed to fetch all stories:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+        } catch (error: any) {
+          if (error.code !== 401) {
+              console.error("Failed to fetch all stories:", error);
+              Alert.alert("Error", "Could not fetch stories.");
+          }
+        } finally {
+          setIsLoading(false);
+        }
+      };
 
-    fetchAllStories();
-  }, [user]);
+      fetchAllStories();
+    }, [user]) // The effect will re-run if the user object changes (e.g., login/logout)
+  );
 
   const handleStartNewStory = () => {
     setPlayModalVisible(true);
@@ -168,7 +177,6 @@ export default function HomeScreen() {
     }
   };
 
-  // FIX: Redesigned story card to match the new reference image
   const renderStoryCard = ({ item }: { item: StoryWithCreator }) => {
     const truncatedTitle = item.title.length > 15 ? item.title.substring(0, 15) + '...' : item.title;
     const truncatedDesc = item.description && item.description.length > 50 ? item.description.substring(0, 50) + '...' : item.description;
@@ -300,7 +308,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontStyle: 'italic',
   },
-  // FIX: Updated card styles for the new design
   storyCard: {
     flexDirection: 'row',
     borderRadius: 8,
