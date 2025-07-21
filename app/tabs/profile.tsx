@@ -6,8 +6,8 @@ import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
-// --- FIX: Import createNewSession ---
 import { createNewSession, deleteStorySession, getStoryHistory } from '../../lib/history';
+// --- FIX: Updated import path for types ---
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
@@ -67,36 +67,33 @@ export default function ProfileScreen() {
         try {
             const newSession = await createNewSession(story);
             router.push({
-                pathname: `/intro/${newSession.sessionId}`,
-                params: { story: JSON.stringify(newSession.story) },
+                pathname: '/intro/[sessionId]',
+                params: { sessionId: newSession.sessionId, story: JSON.stringify(newSession.story) },
             });
         } catch (error) {
             console.error("Failed to create new session:", error);
             Alert.alert("Error", "Could not start a new story session.");
+        } finally {
             setIsLoading(false);
         }
     };
 
-    // --- FIX: Add a handler to decide where to navigate for history items ---
     const handleContinueSession = (session: StorySession) => {
         const { story, playerData, sessionId } = session;
 
-        // Check if player data is complete based on story requirements
         const isNameMissing = story.ask_user_name && !playerData?.name;
         const isGenderMissing = story.ask_user_gender && !playerData?.gender;
         const isAgeMissing = story.ask_user_age && !playerData?.age;
 
-        // If any required data is missing, go to the intro screen
         if (isNameMissing || isGenderMissing || isAgeMissing) {
             router.push({
-                pathname: `/intro/${sessionId}`,
-                params: { story: JSON.stringify(story) },
+                pathname: '/intro/[sessionId]',
+                params: { sessionId: sessionId, story: JSON.stringify(story) },
             });
         } else {
-            // Otherwise, go directly to the play screen
             router.push({
-                pathname: `/play/${sessionId}`,
-                params: { story: JSON.stringify(story) },
+                pathname: '/play/[sessionId]',
+                params: { sessionId: sessionId, story: JSON.stringify(story) },
             });
         }
     };
@@ -150,7 +147,6 @@ export default function ProfileScreen() {
     const renderHistoryItem = ({ item }: { item: StorySession }) => (
         <TouchableOpacity 
             style={styles.storyCard} 
-            // --- FIX: Use the new handler to navigate correctly ---
             onPress={() => handleContinueSession(item)}
             onLongPress={() => {
                 setSessionToDelete(item);

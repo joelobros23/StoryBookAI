@@ -2,11 +2,14 @@ import { Feather } from '@expo/vector-icons';
 import { Query } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../context/AuthContext'; // Assuming AuthContext is available
+import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
-import { handleQuickStart } from '../../lib/quickstart'; // Assuming quickstart.ts exists and has this function
+// --- FIX: Import createNewSession ---
+import { createNewSession } from '../../lib/history';
+import { handleQuickStart } from '../../lib/quickstart';
+// --- FIX: Update type import path ---
 import { StoryDocument } from '../types/story';
 
 // --- Genre Selection Modal ---
@@ -86,13 +89,12 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user } = useAuth(); // Get user from AuthContext
+  const { user } = useAuth();
   const [allStories, setAllStories] = useState<StoryDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [playModalVisible, setPlayModalVisible] = useState(false); // State for the main play modal
-  const [quickStartModalVisible, setQuickStartModalVisible] = useState(false); // State for genre selection modal
-  const [isGenerating, setIsGenerating] = useState(false); // State for loading indicator
-  // New state to store user names by their IDs
+  const [playModalVisible, setPlayModalVisible] = useState(false);
+  const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [creatorNames, setCreatorNames] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -109,7 +111,7 @@ export default function HomeScreen() {
 
         const uniqueUserIds = new Set<string>();
         fetchedStories.forEach(story => {
-          if (story.userId && !story.userName && !creatorNames.has(story.userId)) {
+          if (story.userId && !creatorNames.has(story.userId)) {
             uniqueUserIds.add(story.userId);
           }
         });
@@ -119,6 +121,8 @@ export default function HomeScreen() {
           if (user && user.$id === userId) {
             newCreatorNames.set(userId, user.name || 'Current User');
           } else {
+            // In a real app, you'd fetch user profiles here.
+            // For now, we'll just use a placeholder.
             newCreatorNames.set(userId, 'Anonymous'); 
           }
         }
@@ -151,17 +155,35 @@ export default function HomeScreen() {
     setIsGenerating(false);
   };
 
+  // --- FIX: Add handler to start a story session ---
+  const handleStartStory = async (story: StoryDocument) => {
+    setIsGenerating(true);
+    try {
+        const newSession = await createNewSession(story);
+        router.push({
+            pathname: '/intro/[sessionId]',
+            params: { sessionId: newSession.sessionId, story: JSON.stringify(newSession.story) },
+        });
+    } catch (error) {
+        console.error("Failed to create new session:", error);
+        Alert.alert("Error", "Could not start a new story session.");
+    } finally {
+        setIsGenerating(false);
+    }
+  };
+
   const renderStoryCard = ({ item }: { item: StoryDocument }) => {
     const truncatedDescription = item.description 
       ? item.description.substring(0, 100) + (item.description.length > 100 ? '...' : '')
       : 'No description provided.';
 
-    const creatorName = item.userName || creatorNames.get(item.userId) || 'Anonymous';
+    const creatorName = creatorNames.get(item.userId) || 'Anonymous';
 
     return (
       <TouchableOpacity 
         style={styles.storyListItem} 
-        onPress={() => router.push({ pathname: `/story-info/[id]`, params: { id: item.$id } })}
+        // --- FIX: Use the new handler for navigation ---
+        onPress={() => handleStartStory(item)}
       >
         <Text style={styles.storyListItemTitle}>{item.title}</Text>
         <Text style={styles.storyListItemDescription}>{truncatedDescription}</Text>
@@ -208,7 +230,7 @@ export default function HomeScreen() {
       {isGenerating && (
         <View style={modalStyles.loadingOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={modalStyles.loadingText}>Generating your adventure...</Text>
+            <Text style={modalStyles.loadingText}>Starting your adventure...</Text>
         </View>
       )}
     </SafeAreaView>
