@@ -5,7 +5,6 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-// NEW: Import the getImageUrl function
 import { databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession, deleteStorySession, getStoryHistory } from '../../lib/history';
 import { StoryDocument, StorySession } from '../types/story';
@@ -33,7 +32,6 @@ export default function ProfileScreen() {
             setIsLoading(true);
             try {
                 const response = await databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('userId', user.$id), Query.orderDesc('$createdAt')]);
-                // NEW: Ensure the cover_image_id is part of the document type
                 setCreations(response.documents as (StoryDocument & { cover_image_id?: string })[]);
             } catch (error) {
                 Alert.alert("Error", "Could not fetch your creations.");
@@ -139,7 +137,6 @@ export default function ProfileScreen() {
         }
     };
 
-    // NEW: Updated renderCreationItem to display the cover image
     const renderCreationItem = ({ item }: { item: StoryDocument & { cover_image_id?: string } }) => (
         <TouchableOpacity 
             style={styles.storyCard} 
@@ -153,17 +150,18 @@ export default function ProfileScreen() {
                 <Image 
                     source={{ uri: getImageUrl(item.cover_image_id) }} 
                     style={styles.storyCardImage}
+                    resizeMode="cover"
                 />
             ) : (
                 <View style={styles.storyCardIcon}>
-                    <Feather name="book" size={24} color="#c792ea" />
+                    <Feather name="book" size={30} color="#c792ea" />
                 </View>
             )}
             <View style={styles.storyCardTextContainer}>
                 <Text style={styles.storyTitle} numberOfLines={1}>{item.title}</Text>
                 <Text style={styles.storyDescription} numberOfLines={2}>{item.description || 'No description'}</Text>
             </View>
-            <Feather name="chevron-right" size={24} color="#555" />
+            <Feather name="chevron-right" size={24} color="#555" style={{ marginRight: 15 }} />
         </TouchableOpacity>
     );
 
@@ -176,7 +174,7 @@ export default function ProfileScreen() {
                 setShowDeleteModal(true);
             }}
         >
-            <View style={styles.storyCardIcon}><Feather name="book-open" size={24} color="#82aaff" /></View>
+            <View style={styles.storyCardIcon}><Feather name="book-open" size={30} color="#82aaff" /></View>
             <View style={styles.storyCardTextContainer}>
                 <Text style={styles.storyTitle} numberOfLines={1}>{item.story.title}</Text>
                 <Text style={styles.storyDescription} numberOfLines={1}>
@@ -318,25 +316,35 @@ const styles = StyleSheet.create({
     activeTab: { borderBottomColor: '#c792ea' },
     tabText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
     tabContent: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
-    storyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2a2a2a', padding: 15, borderRadius: 10, marginBottom: 10 },
+    // FIX: Updated card styles for full-width image
+    storyCard: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        backgroundColor: '#2a2a2a', 
+        borderRadius: 10, 
+        marginBottom: 10,
+        overflow: 'hidden', // Clip image corners
+    },
+    // FIX: Updated icon styles
     storyCardIcon: { 
-        marginRight: 15,
-        width: 50, // NEW: Give a fixed size to the icon container
-        height: 50,
+        width: 80,
+        height: 80,
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: '#333',
-        borderRadius: 8,
     },
-    // NEW: Style for the cover image
+    // FIX: Updated image styles
     storyCardImage: {
-        width: 50,
-        height: 50,
-        borderRadius: 8,
-        marginRight: 15,
-        backgroundColor: '#333', // A fallback background color
+        width: 80,
+        height: 80,
+        backgroundColor: '#333',
     },
-    storyCardTextContainer: { flex: 1 },
+    // FIX: Updated text container styles
+    storyCardTextContainer: { 
+        flex: 1,
+        paddingHorizontal: 15,
+        paddingVertical: 15, // Ensure text has vertical padding
+    },
     storyTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
     storyDescription: { color: '#a9a9a9', fontSize: 14, marginTop: 4 },
     emptyListText: { color: '#a9a9a9', textAlign: 'center', marginTop: 40, fontStyle: 'italic', fontSize: 16 },
