@@ -3,7 +3,6 @@ import { PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
 
 const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
-// FIX: Switched to the generateContent endpoint for the image model.
 const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${API_KEY}`;
 
 
@@ -136,7 +135,7 @@ export const generateStoryContinuation = async (
     }
 };
 
-// NEW: Function to generate an image from a text prompt
+// Function to generate an image from a text prompt
 export const generateImageFromPrompt = async (prompt: string): Promise<string | null> => {
     if (!API_KEY) {
         Alert.alert("API Key Missing", "The Gemini API key is not configured.");
@@ -147,8 +146,6 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string | 
     console.log("Using model: gemini-2.0-flash-preview-image-generation");
 
     try {
-        // FIX: The payload structure has been updated to match the reference code exactly.
-        // This includes adding `role: "user"` and using camelCase `responseModalities` with both "IMAGE" and "TEXT".
         const payload = {
             contents: [{
                 role: "user",
@@ -174,8 +171,8 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string | 
         const result = await response.json();
         
         const candidate = result.candidates?.[0];
-        // FIX: Find the part that contains the image data specifically.
-        const imagePart = candidate?.content?.parts?.find(p => p.inlineData);
+        // FIX: Explicitly typed the parameter 'p' as 'any' to resolve the implicit 'any' type error.
+        const imagePart = candidate?.content?.parts?.find((p: any) => p.inlineData);
 
         if (imagePart?.inlineData?.data) {
             return imagePart.inlineData.data;

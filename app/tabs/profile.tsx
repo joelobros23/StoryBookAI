@@ -2,15 +2,15 @@ import { Feather } from '@expo/vector-icons';
 import { Query } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
+// NEW: Import the getImageUrl function
+import { databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession, deleteStorySession, getStoryHistory } from '../../lib/history';
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
-// --- FIX: Add type for sorting order ---
 type SortOrder = 'Recent' | 'Oldest';
 
 export default function ProfileScreen() {
@@ -25,7 +25,6 @@ export default function ProfileScreen() {
     const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null);
     const [showDeleteCreationModal, setShowDeleteCreationModal] = useState(false);
     const [creationToDelete, setCreationToDelete] = useState<StoryDocument | null>(null);
-    // --- FIX: Add state for sorting ---
     const [sortOrder, setSortOrder] = useState<SortOrder>('Recent');
 
     useEffect(() => {
@@ -34,7 +33,8 @@ export default function ProfileScreen() {
             setIsLoading(true);
             try {
                 const response = await databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('userId', user.$id), Query.orderDesc('$createdAt')]);
-                setCreations(response.documents as StoryDocument[]);
+                // NEW: Ensure the cover_image_id is part of the document type
+                setCreations(response.documents as (StoryDocument & { cover_image_id?: string })[]);
             } catch (error) {
                 Alert.alert("Error", "Could not fetch your creations.");
             } finally {
@@ -46,7 +46,6 @@ export default function ProfileScreen() {
             setIsLoading(true);
             try {
                 const historySessions = await getStoryHistory();
-                // --- FIX: Sort history based on sortOrder state ---
                 const sortedHistory = [...historySessions].sort((a, b) => {
                     const dateA = new Date(a.sessionDate).getTime();
                     const dateB = new Date(b.sessionDate).getTime();
@@ -65,7 +64,6 @@ export default function ProfileScreen() {
         } else {
             fetchHistory();
         }
-    // --- FIX: Add sortOrder to dependency array to refetch on change ---
     }, [user, activeTab, sortOrder]);
 
     const handleLogout = async () => {
@@ -111,7 +109,6 @@ export default function ProfileScreen() {
     const handleDeleteSession = async () => {
         if (sessionToDelete) {
             await deleteStorySession(sessionToDelete.sessionId);
-            // Refetch history after deletion
             const historySessions = await getStoryHistory();
             const sortedHistory = [...historySessions].sort((a, b) => {
                 const dateA = new Date(a.sessionDate).getTime();
@@ -142,7 +139,8 @@ export default function ProfileScreen() {
         }
     };
 
-    const renderCreationItem = ({ item }: { item: StoryDocument }) => (
+    // NEW: Updated renderCreationItem to display the cover image
+    const renderCreationItem = ({ item }: { item: StoryDocument & { cover_image_id?: string } }) => (
         <TouchableOpacity 
             style={styles.storyCard} 
             onPress={() => handleStartCreation(item)}
@@ -151,7 +149,16 @@ export default function ProfileScreen() {
                 setShowDeleteCreationModal(true);
             }}
         >
-            <View style={styles.storyCardIcon}><Feather name="book" size={24} color="#c792ea" /></View>
+            {item.cover_image_id ? (
+                <Image 
+                    source={{ uri: getImageUrl(item.cover_image_id) }} 
+                    style={styles.storyCardImage}
+                />
+            ) : (
+                <View style={styles.storyCardIcon}>
+                    <Feather name="book" size={24} color="#c792ea" />
+                </View>
+            )}
             <View style={styles.storyCardTextContainer}>
                 <Text style={styles.storyTitle} numberOfLines={1}>{item.title}</Text>
                 <Text style={styles.storyDescription} numberOfLines={2}>{item.description || 'No description'}</Text>
@@ -199,7 +206,6 @@ export default function ProfileScreen() {
         }
 
         return (
-            // --- FIX: Add sorting UI and use sorted history data ---
             <>
                 <View style={styles.sortContainer}>
                     <TouchableOpacity onPress={() => setSortOrder('Recent')} style={[styles.sortButton, sortOrder === 'Recent' && styles.activeSortButton]}>
@@ -313,7 +319,23 @@ const styles = StyleSheet.create({
     tabText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
     tabContent: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
     storyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2a2a2a', padding: 15, borderRadius: 10, marginBottom: 10 },
-    storyCardIcon: { marginRight: 15 },
+    storyCardIcon: { 
+        marginRight: 15,
+        width: 50, // NEW: Give a fixed size to the icon container
+        height: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#333',
+        borderRadius: 8,
+    },
+    // NEW: Style for the cover image
+    storyCardImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 8,
+        marginRight: 15,
+        backgroundColor: '#333', // A fallback background color
+    },
     storyCardTextContainer: { flex: 1 },
     storyTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
     storyDescription: { color: '#a9a9a9', fontSize: 14, marginTop: 4 },
@@ -321,8 +343,6 @@ const styles = StyleSheet.create({
     logoutButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#c73e3e', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 30, marginTop: 10 },
     logoutButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
     continueText: { color: '#82aaff', fontSize: 14, fontWeight: '600' },
-
-    // --- FIX: Add styles for the sorting UI ---
     sortContainer: {
         flexDirection: 'row',
         justifyContent: 'center',
@@ -344,7 +364,6 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '600',
     },
-
     modalOverlay: {
         flex: 1,
         justifyContent: 'center',

@@ -1,4 +1,5 @@
 import { Account, Client, Databases, ID, Storage } from "appwrite";
+import * as FileSystem from 'expo-file-system';
 
 // It's best practice to use environment variables for sensitive data.
 // Make sure you have these in a .env file and have configured expo to use them.
@@ -8,7 +9,6 @@ const appwriteProjectId = process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID;
 // These are the IDs from your Appwrite console
 export const databaseId = 'stories';
 export const storiesCollectionId = 'stories';
-// NEW: Bucket ID for story cover images
 export const storyImagesBucketId = 'story_images';
 
 
@@ -22,36 +22,66 @@ const client = new Client()
 
 const account = new Account(client);
 const databases = new Databases(client);
-// NEW: Initialize Appwrite Storage
 const storage = new Storage(client);
 
+// Note for developer: Ensure you have 'expo-file-system' installed in your project.
+// You can install it by running: npx expo install expo-file-system
 export { account, client, databases, ID, storage };
 
-// NEW: Function to upload a base64 encoded image to Appwrite Storage
+// Function to upload a base64 encoded image to Appwrite Storage
 export const uploadImageFile = async (base64: string, fileName: string): Promise<string> => {
+    // Define a temporary path for the image file in the app's cache directory.
+    const tempFilePath = FileSystem.cacheDirectory + fileName;
+
     try {
-        // In React Native, we can use fetch to convert a data URI to a blob
-        const response = await fetch(`data:image/png;base64,${base64}`);
-        const blob = await response.blob();
+        // 1. Write the base64 image data to the temporary file.
+        await FileSystem.writeAsStringAsync(tempFilePath, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
 
-        // The Appwrite Web SDK's createFile method can accept a File object, which we can create from a blob
-        const fileToUpload = new File([blob], fileName, { type: 'image/png' });
+        // 2. Prepare the payload using FormData for a multipart/form-data request.
+        // This is the most reliable way to handle file uploads in React Native.
+        const formData = new FormData();
+        const fileId = ID.unique();
+        
+        // The file object must have a `uri` property for React Native's fetch to work correctly.
+        formData.append('fileId', fileId);
+        formData.append('file', {
+            uri: tempFilePath,
+            name: fileName,
+            type: 'image/png',
+        } as any);
 
-        const result = await storage.createFile(
-            storyImagesBucketId,
-            ID.unique(),
-            fileToUpload
-        );
+        // 3. Manually perform the fetch request to the Appwrite storage endpoint.
+        const response = await fetch(`${appwriteEndpoint}/storage/buckets/${storyImagesBucketId}/files`, {
+            method: 'POST',
+            headers: {
+                'X-Appwrite-Project': appwriteProjectId,
+                'Content-Type': 'multipart/form-data',
+            },
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'File upload failed');
+        }
+
         return result.$id;
+
     } catch (error) {
         console.error("Appwrite file upload failed:", error);
         throw new Error("Failed to upload image to storage.");
+    } finally {
+        // 4. Clean up by deleting the temporary file after the upload attempt.
+        await FileSystem.deleteAsync(tempFilePath, { idempotent: true });
     }
 };
 
-// NEW: Function to get a public URL for an image file
-// FIX: The getFilePreview method in your environment returns a string directly.
-// This removes the incorrect .href property access.
+// Function to get a public URL for an image file
 export const getImageUrl = (fileId: string): string => {
+    // FIX: The getFilePreview method in this environment returns a string URL directly.
+    // Removing the incorrect '.href' property access resolves the error.
     return storage.getFilePreview(storyImagesBucketId, fileId);
 };
