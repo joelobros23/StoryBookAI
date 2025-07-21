@@ -146,7 +146,6 @@ const styles = StyleSheet.create({
   },
 });
 
-// Reuse the FormInput component from create-story.tsx
 type FormInputProps = {
   label: string;
   value: string;
@@ -157,7 +156,7 @@ type FormInputProps = {
   showDefaultButton?: boolean;
   onInsertDefault?: () => void;
   editable?: boolean;
-  keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad'; // Add this
+  keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
 };
 const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, placeholder, multiline = false, height = 40, showDefaultButton = false, onInsertDefault, editable = true }) => (
   <View style={styles.inputContainer}>
@@ -206,10 +205,8 @@ export default function EditStoryScreen() {
   const { sessionId, story: storyString } = useLocalSearchParams<{ sessionId: string; story?: string }>();
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'Details' | 'Plot'>('Details');
-  // Parse story data
   const initialStory = storyString ? JSON.parse(storyString) as StoryDocument : null;
   
-  // State for form fields
   const [title, setTitle] = useState(initialStory?.title || '');
   const [description, setDescription] = useState(initialStory?.description || '');
   const [tags, setTags] = useState(initialStory?.tags || '');
@@ -262,14 +259,12 @@ useEffect(() => {
     };
 
     try {
-      // Update player data
       const updatedPlayerData: PlayerData = {
         name: playerName,
         age: playerAge,
         gender: playerGender
       };
       
-      // Save both story and player data
       await updateStoryInSession(sessionId, updatedStory);
       await saveSessionPlayerData(sessionId, updatedPlayerData);
       
@@ -301,7 +296,6 @@ useEffect(() => {
       </View>
       
       <ScrollView contentContainerStyle={styles.container}>
-        {/* Add tab navigation */}
         <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'Details' && styles.activeTab]}
@@ -315,14 +309,12 @@ useEffect(() => {
           </TouchableOpacity>
         </View>
 
-        {/* Conditional rendering based on active tab */}
         {activeTab === 'Details' ? (
           <View style={styles.formContainer}>
             <FormInput label="Title" value={title} onChangeText={setTitle} placeholder="Story title" />
             <FormInput label="Description" value={description} onChangeText={setDescription} placeholder="Story description" multiline height={100} />
             <FormInput label="Tags" value={tags} onChangeText={setTags} placeholder="Comma separated tags" />
             
-            {/* Player Information Section */}
             <Text style={styles.sectionTitle}>Player Information</Text>
 
      {askName && (

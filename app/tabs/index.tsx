@@ -3,6 +3,7 @@ import { Query } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext'; // Assuming AuthContext is available
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 import { handleQuickStart } from '../../lib/quickstart'; // Assuming quickstart.ts exists and has this function
@@ -106,46 +107,18 @@ export default function HomeScreen() {
         const fetchedStories = response.documents as StoryDocument[];
         setAllStories(fetchedStories);
 
-        // Collect unique user IDs from fetched stories that don't already have a userName
         const uniqueUserIds = new Set<string>();
         fetchedStories.forEach(story => {
-          // Only add to set if userName is not already present in the story document
-          // AND we don't already have the name in our cache
           if (story.userId && !story.userName && !creatorNames.has(story.userId)) {
             uniqueUserIds.add(story.userId);
           }
         });
-
-        // This section demonstrates how you *would* fetch user names if a public
-        // 'users' collection existed or if 'userName' was not stored in 'StoryDocument'.
-        // However, for Appwrite client-side, directly querying other users' details
-        // by ID is not straightforward for security reasons.
-        // The RECOMMENDED way to display creator names is to:
-        // 1. Add a 'userName' attribute (string) to your 'stories' collection in Appwrite.
-        // 2. Modify 'create-story.tsx' to save 'user.name' into this 'userName' attribute
-        //    when the story is created.
-        // Once those changes are made, 'item.userName' will be directly available
-        // on the StoryDocument, making this separate fetch unnecessary.
-
+        
         const newCreatorNames = new Map(creatorNames);
         for (const userId of Array.from(uniqueUserIds)) {
-          // Placeholder for actual user fetching logic.
-          // If you implement a 'users' collection with public read access,
-          // you would query it here:
-          // try {
-          //   const userDoc = await databases.getDocument(databaseId, 'usersCollectionId', userId);
-          //   newCreatorNames.set(userId, userDoc.name);
-          // } catch (error) {
-          //   console.warn(`Could not fetch name for user ${userId}:`, error);
-          //   newCreatorNames.set(userId, 'Anonymous');
-          // }
-
-          // For now, if the current logged-in user is the creator, use their name.
-          // Otherwise, it will default to 'Anonymous' if 'userName' is not in the document.
           if (user && user.$id === userId) {
             newCreatorNames.set(userId, user.name || 'Current User');
           } else {
-            // If userName is not in the document and it's not the current user, default to anonymous
             newCreatorNames.set(userId, 'Anonymous'); 
           }
         }
@@ -159,26 +132,23 @@ export default function HomeScreen() {
     };
 
     fetchAllStories();
-  }, [user]); // Re-run when user changes (e.g., login/logout)
+  }, [user]);
 
-  // This function is called when the "Start New Story" button is pressed
   const handleStartNewStory = () => {
-    setPlayModalVisible(true); // This opens the PlayButtonModal
+    setPlayModalVisible(true);
   };
 
-  // This function is passed to PlayButtonModal and opens the QuickStartModal
   const openQuickStart = () => {
-    setPlayModalVisible(false); // Close the main play modal
-    setQuickStartModalVisible(true); // Open the quick start genre selection modal
+    setPlayModalVisible(false);
+    setQuickStartModalVisible(true);
   };
 
-  // This function is passed to QuickStartModal and handles genre selection
   const onGenreSelect = async (genre: string) => {
-    setQuickStartModalVisible(false); // Close the genre selection modal
-    if (!user) return; // Ensure user is logged in for quick start
-    setIsGenerating(true); // Show loading indicator
-    await handleQuickStart(genre, user, router); // Call the quick start logic
-    setIsGenerating(false); // Hide loading indicator
+    setQuickStartModalVisible(false);
+    if (!user) return;
+    setIsGenerating(true);
+    await handleQuickStart(genre, user, router);
+    setIsGenerating(false);
   };
 
   const renderStoryCard = ({ item }: { item: StoryDocument }) => {
@@ -186,7 +156,6 @@ export default function HomeScreen() {
       ? item.description.substring(0, 100) + (item.description.length > 100 ? '...' : '')
       : 'No description provided.';
 
-    // Prioritize userName from the document, then from fetched names, then 'Anonymous'
     const creatorName = item.userName || creatorNames.get(item.userId) || 'Anonymous';
 
     return (
@@ -205,7 +174,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.title}>Storybook AI</Text>
@@ -227,13 +196,12 @@ export default function HomeScreen() {
               renderItem={renderStoryCard}
               keyExtractor={(item) => item.$id}
               ListEmptyComponent={<Text style={styles.emptyListText}>No stories found. Be the first to create one!</Text>}
-              scrollEnabled={false} // Disable FlatList scrolling as it's inside a ScrollView
+              scrollEnabled={false}
             />
           )}
         </View>
       </ScrollView>
 
-      {/* Modals for Play/Quick Start are rendered here */}
       <PlayButtonModal visible={playModalVisible} onClose={() => setPlayModalVisible(false)} onQuickStart={openQuickStart} />
       <QuickStartModal visible={quickStartModalVisible} onClose={() => setQuickStartModalVisible(false)} onSelectGenre={onGenreSelect} />
 
@@ -243,7 +211,7 @@ export default function HomeScreen() {
             <Text style={modalStyles.loadingText}>Generating your adventure...</Text>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -265,7 +233,7 @@ const styles = StyleSheet.create({
     fontSize: 42,
     fontWeight: 'bold',
     color: '#FFFFFF',
-    fontFamily: 'serif', // A more storybook-like font
+    fontFamily: 'serif',
   },
   subtitle: {
     fontSize: 18,
@@ -296,9 +264,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   allStoriesSection: {
-    flex: 1, // Make it take available height
+    flex: 1,
     width: '100%',
-    // Removed backgroundColor, borderRadius, padding, and marginBottom
   },
   allStoriesTitle: {
     fontSize: 22,
@@ -349,7 +316,6 @@ const styles = StyleSheet.create({
   },
 });
 
-// Separate styles for modals to avoid conflicts and keep them organized
 const modalStyles = StyleSheet.create({
     modalOverlay: {
         flex: 1,

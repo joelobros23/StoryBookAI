@@ -111,7 +111,6 @@ export default function PlayStoryScreen() {
                 
                 const savedSession = await getStorySession(sessionId);
                 if (savedSession) {
-                    // Ensure all entries have a unique ID
                     const contentWithIds = savedSession.content.map((entry, index) => ({ ...entry, id: entry.id || `${Date.now()}-${index}` }));
                     if (contentWithIds.length > 0) {
                         setStoryContent(contentWithIds);
@@ -182,7 +181,6 @@ export default function PlayStoryScreen() {
     }
 
     const handleErase = () => {
-        // Alert if there's nothing to erase (i.e., only the opening entry is left)
         if (storyContent.length <= 1) {
             Alert.alert("Cannot Erase", "There is nothing to erase from the story.");
             return;
@@ -192,22 +190,16 @@ export default function PlayStoryScreen() {
             let newContent = [...prevContent];
             const lastEntry = newContent[newContent.length - 1];
 
-            // The most common case: the last entry is an AI response.
             if (lastEntry.type === 'ai') {
-                newContent.pop(); // Remove the AI response.
-
-                // If the entry before the AI response was a user's action, remove it too.
+                newContent.pop(); 
                 if (newContent.length > 0 && newContent[newContent.length - 1].type === 'user') {
                     newContent.pop();
                 }
             }
-            // Less common: user submitted an action but the AI failed to respond.
-            // The last entry is a user entry. We should allow erasing it.
             else if (lastEntry.type === 'user') {
                 newContent.pop();
             }
 
-            // After erasing, ensure no entries are marked as 'new' to avoid confusion.
             return newContent.map(entry => ({ ...entry, isNew: false }));
         });
     };
@@ -223,10 +215,9 @@ export default function PlayStoryScreen() {
         };
 
         setStoryContent(updatedContent);
-        setEditingEntry(null); // Close the modal
+        setEditingEntry(null);
     };
 
-    // Move ActionButton inside the component
     const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; disabled?: boolean }) => (
         <TouchableOpacity 
             style={[styles.actionButton, disabled && styles.disabledButton]} 

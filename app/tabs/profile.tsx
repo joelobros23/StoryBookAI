@@ -11,6 +11,7 @@ import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
 
+// No changes needed. This file already uses SafeAreaView correctly.
 export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
@@ -19,10 +20,8 @@ export default function ProfileScreen() {
     const [history, setHistory] = useState<StorySession[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
-    const [showDeleteModal, setShowDeleteModal] = useState(false); // For history deletion
-    const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null); // For history deletion
-
-    // New state for creation deletion
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null);
     const [showDeleteCreationModal, setShowDeleteCreationModal] = useState(false);
     const [creationToDelete, setCreationToDelete] = useState<StoryDocument | null>(null);
 
@@ -66,7 +65,6 @@ export default function ProfileScreen() {
     const handleDeleteSession = async () => {
         if (sessionToDelete) {
             await deleteStorySession(sessionToDelete.sessionId);
-            // Refresh history after deletion
             const updatedHistory = await getStoryHistory();
             setHistory(updatedHistory);
             setShowDeleteModal(false);
@@ -74,13 +72,11 @@ export default function ProfileScreen() {
         }
     };
 
-    // New function to handle creation deletion
     const handleDeleteCreation = async () => {
         if (creationToDelete) {
-            setIsLoading(true); // Show loading indicator during deletion
+            setIsLoading(true);
             try {
                 await databases.deleteDocument(databaseId, storiesCollectionId, creationToDelete.$id);
-                // Filter out the deleted creation from the state
                 setCreations(prevCreations => prevCreations.filter(c => c.$id !== creationToDelete.$id));
                 Alert.alert("Success", "Story deleted successfully.");
             } catch (error) {
@@ -98,7 +94,7 @@ export default function ProfileScreen() {
         <TouchableOpacity 
             style={styles.storyCard} 
             onPress={() => router.push({ pathname: `/story-info/[id]`, params: { id: item.$id } })}
-            onLongPress={() => { // Add long press for creations
+            onLongPress={() => {
                 setCreationToDelete(item);
                 setShowDeleteCreationModal(true);
             }}
@@ -180,7 +176,6 @@ export default function ProfileScreen() {
                 </View>
             </View>
 
-            {/* Delete History Confirmation Modal */}
             <Modal
                 animationType="fade"
                 transparent={true}
@@ -211,7 +206,6 @@ export default function ProfileScreen() {
                 </Pressable>
             </Modal>
 
-            {/* New: Delete Creation Confirmation Modal */}
             <Modal
                 animationType="fade"
                 transparent={true}
@@ -268,7 +262,6 @@ const styles = StyleSheet.create({
     logoutButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
     continueText: { color: '#82aaff', fontSize: 14, fontWeight: '600' },
 
-    // Modal Styles
     modalOverlay: {
         flex: 1,
         justifyContent: 'center',
@@ -322,7 +315,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#333',
     },
     deleteButton: {
-        backgroundColor: '#c73e3e', // Red color for delete
+        backgroundColor: '#c73e3e',
     },
     modalButtonText: {
         color: 'white',
