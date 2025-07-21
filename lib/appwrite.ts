@@ -40,11 +40,9 @@ export const uploadImageFile = async (base64: string, fileName: string): Promise
         });
 
         // 2. Prepare the payload using FormData for a multipart/form-data request.
-        // This is the most reliable way to handle file uploads in React Native.
         const formData = new FormData();
         const fileId = ID.unique();
         
-        // The file object must have a `uri` property for React Native's fetch to work correctly.
         formData.append('fileId', fileId);
         formData.append('file', {
             uri: tempFilePath,
@@ -81,7 +79,9 @@ export const uploadImageFile = async (base64: string, fileName: string): Promise
 
 // Function to get a public URL for an image file
 export const getImageUrl = (fileId: string): string => {
-    // FIX: The getFilePreview method in this environment returns a string URL directly.
-    // Removing the incorrect '.href' property access resolves the error.
-    return storage.getFilePreview(storyImagesBucketId, fileId);
+    // FIX: Use storage.getFileView to get a publicly accessible URL for the image.
+    // The getFilePreview method returns a URL that requires authentication, causing the image to fail to load.
+    // getFileView provides a direct, public link suitable for the <Image> component.
+    const url = storage.getFileView(storyImagesBucketId, fileId);
+    return url.toString();
 };
