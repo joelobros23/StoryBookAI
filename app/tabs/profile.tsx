@@ -7,10 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession, deleteStorySession, getStoryHistory } from '../../lib/history';
-// --- FIX: Updated import path for types ---
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
+// --- FIX: Add type for sorting order ---
+type SortOrder = 'Recent' | 'Oldest';
 
 export default function ProfileScreen() {
     const { user, logout } = useAuth();
@@ -24,6 +25,8 @@ export default function ProfileScreen() {
     const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null);
     const [showDeleteCreationModal, setShowDeleteCreationModal] = useState(false);
     const [creationToDelete, setCreationToDelete] = useState<StoryDocument | null>(null);
+    // --- FIX: Add state for sorting ---
+    const [sortOrder, setSortOrder] = useState<SortOrder>('Recent');
 
     useEffect(() => {
         const fetchCreations = async () => {
@@ -43,7 +46,13 @@ export default function ProfileScreen() {
             setIsLoading(true);
             try {
                 const historySessions = await getStoryHistory();
-                setHistory(historySessions);
+                // --- FIX: Sort history based on sortOrder state ---
+                const sortedHistory = [...historySessions].sort((a, b) => {
+                    const dateA = new Date(a.sessionDate).getTime();
+                    const dateB = new Date(b.sessionDate).getTime();
+                    return sortOrder === 'Recent' ? dateB - dateA : dateA - dateB;
+                });
+                setHistory(sortedHistory);
             } catch (error) {
                 Alert.alert("Error", "Could not fetch your history.");
             } finally {
@@ -56,7 +65,8 @@ export default function ProfileScreen() {
         } else {
             fetchHistory();
         }
-    }, [user, activeTab]);
+    // --- FIX: Add sortOrder to dependency array to refetch on change ---
+    }, [user, activeTab, sortOrder]);
 
     const handleLogout = async () => {
         await logout();
@@ -101,8 +111,14 @@ export default function ProfileScreen() {
     const handleDeleteSession = async () => {
         if (sessionToDelete) {
             await deleteStorySession(sessionToDelete.sessionId);
-            const updatedHistory = await getStoryHistory();
-            setHistory(updatedHistory);
+            // Refetch history after deletion
+            const historySessions = await getStoryHistory();
+            const sortedHistory = [...historySessions].sort((a, b) => {
+                const dateA = new Date(a.sessionDate).getTime();
+                const dateB = new Date(b.sessionDate).getTime();
+                return sortOrder === 'Recent' ? dateB - dateA : dateA - dateB;
+            });
+            setHistory(sortedHistory);
             setShowDeleteModal(false);
             setSessionToDelete(null);
         }
@@ -183,12 +199,23 @@ export default function ProfileScreen() {
         }
 
         return (
-            <FlatList
-                data={history}
-                renderItem={renderHistoryItem}
-                keyExtractor={(item) => item.sessionId}
-                ListEmptyComponent={<Text style={styles.emptyListText}>Your story history is empty.</Text>}
-            />
+            // --- FIX: Add sorting UI and use sorted history data ---
+            <>
+                <View style={styles.sortContainer}>
+                    <TouchableOpacity onPress={() => setSortOrder('Recent')} style={[styles.sortButton, sortOrder === 'Recent' && styles.activeSortButton]}>
+                        <Text style={styles.sortButtonText}>Recent</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setSortOrder('Oldest')} style={[styles.sortButton, sortOrder === 'Oldest' && styles.activeSortButton]}>
+                        <Text style={styles.sortButtonText}>Oldest</Text>
+                    </TouchableOpacity>
+                </View>
+                <FlatList
+                    data={history}
+                    renderItem={renderHistoryItem}
+                    keyExtractor={(item) => item.sessionId}
+                    ListEmptyComponent={<Text style={styles.emptyListText}>Your story history is empty.</Text>}
+                />
+            </>
         );
     };
 
@@ -284,7 +311,7 @@ const styles = StyleSheet.create({
     tab: { flex: 1, paddingVertical: 15, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
     activeTab: { borderBottomColor: '#c792ea' },
     tabText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-    tabContent: { flex: 1, padding: 20 },
+    tabContent: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
     storyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2a2a2a', padding: 15, borderRadius: 10, marginBottom: 10 },
     storyCardIcon: { marginRight: 15 },
     storyCardTextContainer: { flex: 1 },
@@ -294,6 +321,29 @@ const styles = StyleSheet.create({
     logoutButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#c73e3e', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 30, marginTop: 10 },
     logoutButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
     continueText: { color: '#82aaff', fontSize: 14, fontWeight: '600' },
+
+    // --- FIX: Add styles for the sorting UI ---
+    sortContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginBottom: 15,
+        backgroundColor: '#2a2a2a',
+        borderRadius: 20,
+        padding: 4,
+    },
+    sortButton: {
+        flex: 1,
+        paddingVertical: 8,
+        borderRadius: 16,
+        alignItems: 'center',
+    },
+    activeSortButton: {
+        backgroundColor: '#c792ea',
+    },
+    sortButtonText: {
+        color: '#FFFFFF',
+        fontWeight: '600',
+    },
 
     modalOverlay: {
         flex: 1,
