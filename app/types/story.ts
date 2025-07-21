@@ -16,6 +16,7 @@ export type StoryDocument = Models.Document & {
     ask_user_age: boolean;
     ask_user_gender: boolean;
     userId: string;
+    cover_image_id?: string; // Ensure this is included
 };
 
 /**
@@ -46,5 +47,7 @@ export type StorySession = {
     content: StoryEntry[];
     sessionId: string;
     sessionDate: string;
-    playerData?: PlayerData; // Added to store character info
+    playerData?: PlayerData;
+    // FIX: Add the new property for the local image path
+    localCoverImagePath?: string;
 };

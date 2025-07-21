@@ -24,6 +24,10 @@ const account = new Account(client);
 const databases = new Databases(client);
 const storage = new Storage(client);
 
+
+// Note for developer: Ensure you have 'expo-file-system' installed in your project.
+// You can install it by running: npx expo install expo-file-system
+// FIX: Export the new Users service
 export { account, client, databases, ID, storage };
 
 // Function to upload a base64 encoded image to Appwrite Storage
@@ -62,21 +66,34 @@ export const uploadImageFile = async (base64: string, fileName: string): Promise
     }
 };
 
-// NEW: Function to delete an image file from Appwrite Storage
+// Function to delete an image file from Appwrite Storage
 export const deleteImageFile = async (fileId: string): Promise<void> => {
     try {
         await storage.deleteFile(storyImagesBucketId, fileId);
         console.log(`Image with ID ${fileId} deleted successfully.`);
     } catch (error) {
         console.error(`Failed to delete image with ID ${fileId}:`, error);
-        // We don't re-throw the error to allow the story deletion to proceed even if image deletion fails.
-        // You could add more robust error handling here if needed.
     }
 };
 
+// Function to download an image from storage and save it locally
+export const downloadAndSaveImage = async (fileId: string): Promise<string | null> => {
+    try {
+        const url = storage.getFileDownload(storyImagesBucketId, fileId);
+        const localUri = FileSystem.documentDirectory + `${fileId}.png`;
+
+        const { uri } = await FileSystem.downloadAsync(url.toString(), localUri);
+        console.log('Image downloaded to:', uri);
+        return uri;
+    } catch (error) {
+        console.error('Failed to download image:', error);
+        return null;
+    }
+};
 
 // Function to get a public URL for an image file
 export const getImageUrl = (fileId: string): string => {
+    // FIX: The getFileView method returns a URL object. Convert it to a string.
     const url = storage.getFileView(storyImagesBucketId, fileId);
     return url.toString();
 };

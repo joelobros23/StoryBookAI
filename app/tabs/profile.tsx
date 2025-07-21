@@ -5,7 +5,6 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-// FIX: Import the new deleteImageFile function
 import { databaseId, databases, deleteImageFile, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession, deleteStorySession, getStoryHistory } from '../../lib/history';
 import { StoryDocument, StorySession } from '../types/story';
@@ -13,7 +12,6 @@ import { StoryDocument, StorySession } from '../types/story';
 type ProfileTab = 'Creations' | 'History';
 type SortOrder = 'Recent' | 'Oldest';
 
-// FIX: Define a more specific type for creations that includes the optional cover image ID
 type CreationStory = StoryDocument & { cover_image_id?: string };
 
 export default function ProfileScreen() {
@@ -27,7 +25,6 @@ export default function ProfileScreen() {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<StorySession | null>(null);
     const [showDeleteCreationModal, setShowDeleteCreationModal] = useState(false);
-    // FIX: Use the more specific CreationStory type for the item to be deleted
     const [creationToDelete, setCreationToDelete] = useState<CreationStory | null>(null);
     const [sortOrder, setSortOrder] = useState<SortOrder>('Recent');
 
@@ -128,12 +125,10 @@ export default function ProfileScreen() {
         if (creationToDelete) {
             setIsLoading(true);
             try {
-                // FIX: Check for a cover image and delete it from storage first.
                 if (creationToDelete.cover_image_id) {
                     await deleteImageFile(creationToDelete.cover_image_id);
                 }
                 
-                // Then, delete the story document from the database.
                 await databases.deleteDocument(databaseId, storiesCollectionId, creationToDelete.$id);
                 
                 setCreations(prevCreations => prevCreations.filter(c => c.$id !== creationToDelete.$id));
@@ -177,6 +172,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
     );
 
+    // FIX: Updated renderHistoryItem to display the local cover image
     const renderHistoryItem = ({ item }: { item: StorySession }) => (
         <TouchableOpacity 
             style={styles.storyCard} 
@@ -186,7 +182,17 @@ export default function ProfileScreen() {
                 setShowDeleteModal(true);
             }}
         >
-            <View style={styles.storyCardIcon}><Feather name="book-open" size={30} color="#82aaff" /></View>
+            {item.localCoverImagePath ? (
+                <Image 
+                    source={{ uri: item.localCoverImagePath }} 
+                    style={styles.storyCardImage}
+                    resizeMode="cover"
+                />
+            ) : (
+                <View style={styles.storyCardIcon}>
+                    <Feather name="book-open" size={30} color="#82aaff" />
+                </View>
+            )}
             <View style={styles.storyCardTextContainer}>
                 <Text style={styles.storyTitle} numberOfLines={1}>{item.story.title}</Text>
                 <Text style={styles.storyDescription} numberOfLines={1}>
