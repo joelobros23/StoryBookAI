@@ -188,9 +188,9 @@ export default function HomeScreen() {
           resizeMode="cover"
         />
         <View style={styles.storyCardTextContainer}>
-            <Text style={styles.storyCardCreator}>{item.creatorName || 'Unknown'}</Text>
             <Text style={styles.storyCardTitle}>{truncatedTitle}</Text>
             <Text style={styles.storyCardDescription}>{truncatedDesc || 'No description available.'}</Text>
+            <Text style={styles.storyCardCreator}>{item.creatorName || 'Unknown'}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -310,24 +310,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e1e1e',
   },
   storyCardImage: {
-    width: 100,
-    height: 150,
+    width: 140,
+    height: 140,
     backgroundColor: '#333',
   },
   storyCardTextContainer: {
     flex: 1,
     padding: 15,
+    justifyContent: 'space-between',
   },
   storyCardCreator: {
     color: '#a9a9a9',
     fontSize: 12,
-    marginBottom: 4,
   },
   storyCardTitle: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 8,
   },
   storyCardDescription: {
     color: '#e0e0e0',
