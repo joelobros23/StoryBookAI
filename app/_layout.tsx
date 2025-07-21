@@ -38,14 +38,17 @@ const InitialLayout = () => {
       return; // Do nothing until both are ready
     }
 
-    // Check if the user is currently in the main part of the app (inside the 'tabs' group)
-    const inTabsGroup = segments[0] === 'tabs';
+    // --- FIX: Allow navigation to other authenticated routes besides '/tabs' ---
+    // Check if the user is currently in a valid, authenticated part of the app.
+    const allowedAppRoutes = ['tabs', 'intro', 'play'];
+    const inApp = segments.length > 0 && allowedAppRoutes.includes(segments[0] as string);
 
-    // If the user is logged in but not in the main 'tabs' group, redirect them there.
-    if (user && !inTabsGroup) {
+    // If the user is logged in but not in a valid app route, redirect them to the main screen.
+    // This also correctly handles redirecting from '/login' after a successful login.
+    if (user && !inApp) {
       router.replace('/tabs');
-    } 
-    // If the user is not logged in and is outside the 'login' screen, redirect them to login.
+    }
+    // If the user is not logged in and is trying to access a protected route, redirect to login.
     else if (!user && segments[0] !== 'login') {
       router.replace('/login');
     }

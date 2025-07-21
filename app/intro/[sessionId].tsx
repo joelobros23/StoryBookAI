@@ -16,7 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { saveSessionPlayerData } from '../../lib/history';
 import { PlayerData, StoryDocument } from '../types/story';
 
-type IntroStep = 'name' | 'gender' | 'age' | 'done';
+// --- FIX: Add a 'start' step for stories with no questions ---
+type IntroStep = 'name' | 'gender' | 'age' | 'start';
 
 export default function IntroScreen() {
     const { sessionId, story: storyString } = useLocalSearchParams<{ sessionId: string; story?: string }>();
@@ -41,9 +42,10 @@ export default function IntroScreen() {
         if (parsedStory.ask_user_gender) requiredSteps.push('gender');
         if (parsedStory.ask_user_age) requiredSteps.push('age');
         
+        // --- FIX: Instead of redirecting, show a 'start' screen ---
         if(requiredSteps.length === 0) {
-            // If no questions are needed, just proceed to the game
-            proceedToGame();
+            // If no questions are needed, just show the start button.
+            setSteps(['start']);
         } else {
             setSteps(requiredSteps);
         }
@@ -64,7 +66,10 @@ export default function IntroScreen() {
         if (!sessionId) return;
         setIsLoading(true);
         try {
-            await saveSessionPlayerData(sessionId, finalPlayerData);
+            // Only save if there's actually new data
+            if (Object.keys(finalPlayerData).length > 0) {
+                await saveSessionPlayerData(sessionId, finalPlayerData);
+            }
             proceedToGame();
         } catch (error) {
             Alert.alert("Error", "Could not save character details.");
@@ -74,7 +79,7 @@ export default function IntroScreen() {
 
     const proceedToGame = () => {
         router.replace({
-            pathname: '/play/[sessionId]',
+            pathname: `/play/${sessionId}`,
             params: { sessionId, story: storyString },
         });
     };
@@ -92,20 +97,36 @@ export default function IntroScreen() {
                 return <GenderStep onComplete={(gender) => handleNextStep({ gender })} />;
             case 'age':
                 return <AgeStep onComplete={(age) => handleNextStep({ age })} />;
+            // --- FIX: Add the new 'start' step renderer ---
+            case 'start':
+                return <StartStep onComplete={() => finishIntro(playerData)} />;
             default:
                 return null;
         }
     };
+    
+    // --- FIX: Logic to decide if the "Create Character" title should be shown ---
+    const showCreateCharacterTitle = steps.length > 1 || (steps.length === 1 && steps[0] !== 'start');
 
     return (
         <SafeAreaView style={styles.container}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.keyboardAvoidingView}>
+                {/* --- FIX: Display Story Title and Description in Header --- */}
                 <View style={styles.header}>
-                    <Text style={styles.headerTitle}>Create Your Character</Text>
+                    {story ? (
+                        <>
+                            <Text style={styles.storyTitle}>{story.title}</Text>
+                            <Text style={styles.storyDescription}>{story.description || 'No description provided.'}</Text>
+                        </>
+                    ) : (
+                        <ActivityIndicator color="#c792ea" />
+                    )}
                 </View>
                 <View style={styles.content}>
+                    {/* --- FIX: Conditionally render the character creation title --- */}
+                    {showCreateCharacterTitle && <Text style={styles.contentTitle}>Create Your Character</Text>}
                     {renderCurrentStep()}
                 </View>
             </KeyboardAvoidingView>
@@ -114,6 +135,17 @@ export default function IntroScreen() {
 }
 
 // --- Step Components ---
+
+// --- FIX: Add a new StartStep component ---
+const StartStep = ({ onComplete }: { onComplete: () => void }) => (
+    <View style={styles.stepContainer}>
+        <Text style={styles.stepLabel}>Your adventure is ready to begin!</Text>
+        <TouchableOpacity style={styles.button} onPress={onComplete}>
+            <Text style={styles.buttonText}>Start Story</Text>
+            <Feather name="play" size={20} color="#FFFFFF" style={{ marginLeft: 10 }} />
+        </TouchableOpacity>
+    </View>
+);
 
 const NameStep = ({ onComplete }: { onComplete: (name: string) => void }) => {
     const [name, setName] = useState('');
@@ -181,21 +213,39 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     header: {
-        padding: 20,
+        paddingVertical: 30,
+        paddingHorizontal: 20,
         alignItems: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: '#2a2a2a',
     },
-    headerTitle: {
+    storyTitle: {
         color: '#FFFFFF',
-        fontSize: 24,
+        fontSize: 28,
         fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    storyDescription: {
+        color: '#a9a9a9',
+        fontSize: 16,
+        textAlign: 'center',
     },
     content: {
         flex: 1,
         justifyContent: 'center',
         paddingHorizontal: 20,
     },
+    contentTitle: {
+        color: '#e0e0e0',
+        fontSize: 22,
+        fontWeight: '600',
+        textAlign: 'center',
+        marginBottom: 30,
+    },
     stepContainer: {
         alignItems: 'center',
+        width: '100%',
     },
     stepLabel: {
         color: '#e0e0e0',
