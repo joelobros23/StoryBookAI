@@ -2,14 +2,13 @@ import { Feather } from '@expo/vector-icons';
 import { Query } from 'appwrite';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { databaseId, databases, storiesCollectionId } from '../../lib/appwrite';
-// --- FIX: Import createNewSession ---
+// FIX: Import the Account service to fetch user names
+import { account, databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { createNewSession } from '../../lib/history';
 import { handleQuickStart } from '../../lib/quickstart';
-// --- FIX: Update type import path ---
 import { StoryDocument } from '../types/story';
 
 // --- Genre Selection Modal ---
@@ -86,17 +85,18 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
   );
 };
 
+// FIX: Add creatorName to the story type for display
+type StoryWithCreator = StoryDocument & { cover_image_id?: string; creatorName?: string };
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [allStories, setAllStories] = useState<StoryDocument[]>([]);
+  const [allStories, setAllStories] = useState<StoryWithCreator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [playModalVisible, setPlayModalVisible] = useState(false);
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [creatorNames, setCreatorNames] = useState<Map<string, string>>(new Map());
-
+  
   useEffect(() => {
     const fetchAllStories = async () => {
       setIsLoading(true);
@@ -106,27 +106,24 @@ export default function HomeScreen() {
           storiesCollectionId,
           [Query.orderDesc('$createdAt')]
         );
-        const fetchedStories = response.documents as StoryDocument[];
-        setAllStories(fetchedStories);
-
-        const uniqueUserIds = new Set<string>();
-        fetchedStories.forEach(story => {
-          if (story.userId && !creatorNames.has(story.userId)) {
-            uniqueUserIds.add(story.userId);
-          }
-        });
         
-        const newCreatorNames = new Map(creatorNames);
-        for (const userId of Array.from(uniqueUserIds)) {
-          if (user && user.$id === userId) {
-            newCreatorNames.set(userId, user.name || 'Current User');
-          } else {
-            // In a real app, you'd fetch user profiles here.
-            // For now, we'll just use a placeholder.
-            newCreatorNames.set(userId, 'Anonymous'); 
-          }
-        }
-        setCreatorNames(newCreatorNames);
+        // FIX: Fetch the creator's name for each story
+        const storiesWithCreators = await Promise.all(
+          response.documents.map(async (doc) => {
+            let creatorName = 'Unknown';
+            try {
+              if (doc.userId) {
+                const creator = await account.get(doc.userId);
+                creatorName = creator.name;
+              }
+            } catch (e) {
+              console.error(`Failed to fetch user ${doc.userId}`, e);
+            }
+            return { ...doc, creatorName } as StoryWithCreator;
+          })
+        );
+        
+        setAllStories(storiesWithCreators);
 
       } catch (error) {
         console.error("Failed to fetch all stories:", error);
@@ -155,7 +152,6 @@ export default function HomeScreen() {
     setIsGenerating(false);
   };
 
-  // --- FIX: Add handler to start a story session ---
   const handleStartStory = async (story: StoryDocument) => {
     setIsGenerating(true);
     try {
@@ -172,24 +168,29 @@ export default function HomeScreen() {
     }
   };
 
-  const renderStoryCard = ({ item }: { item: StoryDocument }) => {
-    const truncatedDescription = item.description 
-      ? item.description.substring(0, 100) + (item.description.length > 100 ? '...' : '')
-      : 'No description provided.';
+  // FIX: Redesigned story card to match the new reference image
+  const renderStoryCard = ({ item }: { item: StoryWithCreator }) => {
+    const truncatedTitle = item.title.length > 15 ? item.title.substring(0, 15) + '...' : item.title;
+    const truncatedDesc = item.description && item.description.length > 50 ? item.description.substring(0, 50) + '...' : item.description;
 
-    const creatorName = creatorNames.get(item.userId) || 'Anonymous';
+    const imageSource = item.cover_image_id 
+      ? { uri: getImageUrl(item.cover_image_id) } 
+      : { uri: 'https://placehold.co/200x300/1e1e1e/FFFFFF?text=No+Image' };
 
     return (
       <TouchableOpacity 
-        style={styles.storyListItem} 
-        // --- FIX: Use the new handler for navigation ---
+        style={styles.storyCard} 
         onPress={() => handleStartStory(item)}
       >
-        <Text style={styles.storyListItemTitle}>{item.title}</Text>
-        <Text style={styles.storyListItemDescription}>{truncatedDescription}</Text>
-        <View style={styles.creatorInfo}>
-          <Feather name="user" size={16} color="#a9a9a9" style={{ marginRight: 5 }} />
-          <Text style={styles.storyListItemCreator}>{creatorName}</Text>
+        <Image 
+          source={imageSource}
+          style={styles.storyCardImage}
+          resizeMode="cover"
+        />
+        <View style={styles.storyCardTextContainer}>
+            <Text style={styles.storyCardCreator}>{item.creatorName || 'Unknown'}</Text>
+            <Text style={styles.storyCardTitle}>{truncatedTitle}</Text>
+            <Text style={styles.storyCardDescription}>{truncatedDesc || 'No description available.'}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -243,8 +244,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   scrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
     padding: 20,
   },
   header: {
@@ -286,7 +285,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   allStoriesSection: {
-    flex: 1,
     width: '100%',
   },
   allStoriesTitle: {
@@ -294,47 +292,46 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
     marginBottom: 20,
-    textAlign: 'center',
-  },
-  storyListItem: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.23,
-    shadowRadius: 2.62,
-    elevation: 4,
-  },
-  storyListItemTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 5,
-  },
-  storyListItemDescription: {
-    fontSize: 14,
-    color: '#a9a9a9',
-    marginBottom: 10,
-  },
-  creatorInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  storyListItemCreator: {
-    fontSize: 14,
-    color: '#a9a9a9',
-    fontStyle: 'italic',
+    textAlign: 'left',
   },
   emptyListText: {
     color: '#a9a9a9',
     textAlign: 'center',
     marginTop: 20,
     fontStyle: 'italic',
+  },
+  // FIX: Updated card styles for the new design
+  storyCard: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    marginBottom: 20,
+    width: '100%',
+    overflow: 'hidden',
+    backgroundColor: '#1e1e1e',
+  },
+  storyCardImage: {
+    width: 100,
+    height: 150,
+    backgroundColor: '#333',
+  },
+  storyCardTextContainer: {
+    flex: 1,
+    padding: 15,
+  },
+  storyCardCreator: {
+    color: '#a9a9a9',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  storyCardTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  storyCardDescription: {
+    color: '#e0e0e0',
+    fontSize: 14,
   },
 });
 
