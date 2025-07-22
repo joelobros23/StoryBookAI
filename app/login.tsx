@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
@@ -10,37 +10,39 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const { login, register } = useAuth();
-  const router = useRouter();
+  // NEW: Get the loginWithFacebook function from context
+  const { login, register, loginWithFacebook } = useAuth();
 
-const handleAuthAction = async () => {
-  if (!email || !password || (isRegistering && !name)) {
-    Alert.alert('Error', 'Please fill in all fields.');
-    return;
-  }
-  setIsLoading(true);
-  try {
-    if (isRegistering) {
-      await register(email, password, name);
-    } else {
-      await login(email, password);
+  const handleAuthAction = async () => {
+    if (!email || !password || (isRegistering && !name)) {
+      Alert.alert('Error', 'Please fill in all fields.');
+      return;
     }
-    // REMOVED THE REDIRECT HERE
-  } catch (error: any) {
-    if (error.message.includes('session is active')) {
-      // Special handling for session conflict
-      Alert.alert(
-        'Session Conflict', 
-        'You are already logged in. Redirecting to home...',
-        [{ text: 'OK' }] // Removed onPress handler
-      );
-    } else {
+    setIsLoading(true);
+    try {
+      if (isRegistering) {
+        await register(email, password, name);
+      } else {
+        await login(email, password);
+      }
+    } catch (error: any) {
       Alert.alert('Authentication Error', error.message);
+    } finally {
+      setIsLoading(false);
     }
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
+
+  // NEW: Handler for the Facebook login button
+  const handleFacebookLogin = async () => {
+    setIsLoading(true);
+    try {
+      await loginWithFacebook();
+    } catch (error: any) {
+      Alert.alert('Facebook Login Error', error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -77,6 +79,12 @@ const handleAuthAction = async () => {
 
       <TouchableOpacity style={styles.button} onPress={handleAuthAction} disabled={isLoading}>
         <Text style={styles.buttonText}>{isLoading ? 'Loading...' : isRegistering ? 'Register' : 'Login'}</Text>
+      </TouchableOpacity>
+
+      {/* NEW: Facebook Login Button */}
+      <TouchableOpacity style={styles.facebookButton} onPress={handleFacebookLogin} disabled={isLoading}>
+        <Feather name="facebook" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
+        <Text style={styles.buttonText}>Login with Facebook</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => setIsRegistering(!isRegistering)}>
@@ -126,6 +134,18 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         alignItems: 'center',
         marginTop: 20,
+        flexDirection: 'row',
+        justifyContent: 'center',
+    },
+    // NEW: Style for the Facebook button
+    facebookButton: {
+        backgroundColor: '#3b5998',
+        paddingVertical: 18,
+        borderRadius: 30,
+        alignItems: 'center',
+        marginTop: 15,
+        flexDirection: 'row',
+        justifyContent: 'center',
     },
     buttonText: {
         color: '#FFFFFF',

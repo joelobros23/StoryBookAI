@@ -3,8 +3,8 @@ import * as FileSystem from 'expo-file-system';
 
 // It's best practice to use environment variables for sensitive data.
 // Make sure you have these in a .env file and have configured expo to use them.
-const appwriteEndpoint = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
-const appwriteProjectId = process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID;
+export const appwriteEndpoint = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
+export const appwriteProjectId = process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID;
 
 // These are the IDs from your Appwrite console
 export const databaseId = 'stories';
@@ -25,9 +25,6 @@ const databases = new Databases(client);
 const storage = new Storage(client);
 
 
-// Note for developer: Ensure you have 'expo-file-system' installed in your project.
-// You can install it by running: npx expo install expo-file-system
-// FIX: Export the new Users service
 export { account, client, databases, ID, storage };
 
 // Function to upload a base64 encoded image to Appwrite Storage
@@ -70,7 +67,6 @@ export const uploadImageFile = async (base64: string, fileName: string): Promise
 export const deleteImageFile = async (fileId: string): Promise<void> => {
     try {
         await storage.deleteFile(storyImagesBucketId, fileId);
-        console.log(`Image with ID ${fileId} deleted successfully.`);
     } catch (error) {
         console.error(`Failed to delete image with ID ${fileId}:`, error);
     }
@@ -81,9 +77,7 @@ export const downloadAndSaveImage = async (fileId: string): Promise<string | nul
     try {
         const url = storage.getFileDownload(storyImagesBucketId, fileId);
         const localUri = FileSystem.documentDirectory + `${fileId}.png`;
-
         const { uri } = await FileSystem.downloadAsync(url.toString(), localUri);
-        console.log('Image downloaded to:', uri);
         return uri;
     } catch (error) {
         console.error('Failed to download image:', error);
@@ -93,7 +87,6 @@ export const downloadAndSaveImage = async (fileId: string): Promise<string | nul
 
 // Function to get a public URL for an image file
 export const getImageUrl = (fileId: string): string => {
-    // FIX: The getFileView method returns a URL object. Convert it to a string.
     const url = storage.getFileView(storyImagesBucketId, fileId);
     return url.toString();
 };

@@ -1,12 +1,14 @@
 import { ID, Models } from 'appwrite';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import { account } from '../lib/appwrite';
+// FIX: Import everything needed from the appwrite config file
+import * as WebBrowser from 'expo-web-browser';
+import { account, appwriteEndpoint, appwriteProjectId } from '../lib/appwrite';
 
-// Add explicit string types to the function parameters
 type AuthContextType = {
   user: Models.User<Models.Preferences> | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<any>;
+  loginWithFacebook: () => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<any>;
   logout: () => Promise<void>;
 };
@@ -33,13 +35,9 @@ useEffect(() => {
   return () => { isMounted = false };
 }, []);
 
-  // Add explicit types to the function implementation parameters
 const login = async (email: string, password: string) => {
   try {
-    // Clear any existing session first
     await logout();
-    
-    // Create new session
     await account.createEmailPasswordSession(email, password);
     const currentUser = await account.get();
     setUser(currentUser);
@@ -48,7 +46,27 @@ const login = async (email: string, password: string) => {
   }
 };
 
-  // Add explicit types to the function implementation parameters
+  const loginWithFacebook = async () => {
+    try {
+      const successUrl = 'appwrite-callback-68731f5800079a29af20://callback';
+      const failureUrl = 'appwrite-callback-68731f5800079a29af20://fallback';
+
+      const authUrl = `${appwriteEndpoint}/account/sessions/oauth2/facebook?project=${appwriteProjectId}&success=${encodeURIComponent(successUrl)}&failure=${encodeURIComponent(failureUrl)}`;
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, successUrl);
+
+      if (result.type === 'success') {
+        const currentUser = await account.get();
+        setUser(currentUser);
+      } else {
+        console.log('Facebook login was cancelled or failed.', result);
+      }
+    } catch (error: any) {
+      console.error('Facebook login error:', error);
+      throw new Error(error.message);
+    }
+  };
+
   const register = async (email: string, password: string, name: string) => {
     await account.create(ID.unique(), email, password, name);
     return login(email, password);
@@ -66,7 +84,7 @@ const logout = async () => {
 };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, loginWithFacebook, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
