@@ -4,7 +4,6 @@ import { Alert } from 'react-native';
 import { StoryDocument } from '../app/types/story';
 import { databaseId, databases, ID, storiesCollectionId, uploadImageFile } from './appwrite';
 import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
-import { createNewSession } from './history';
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -41,9 +40,6 @@ async function generateStoryDetailsFromGenre(genre: string): Promise<GeneratedSt
     };
     const prompt = `Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. Provide a title, a short description, an exciting opening scene for the player, a brief summary of the overall story, and 2-3 essential plot points for the AI to remember. Respond with only a valid JSON object that conforms to the following schema: ${JSON.stringify(schema)}`;
     try {
-        // NOTE: This function still uses the older single-key method.
-        // It's separate from the multi-key rotation system in gemini.ts.
-        // For consistency, this could be updated in the future.
         const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
@@ -67,25 +63,22 @@ async function generateStoryDetailsFromGenre(genre: string): Promise<GeneratedSt
 
 /**
  * Generates a high-quality, concise image prompt from story details.
- * @param details The generated story details.
- * @param genre The genre of the story.
- * @returns A string suitable for use as an image generation prompt.
  */
 async function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string): Promise<string> {
-    // A more direct and simpler prompt to get good keywords for the image generator.
-    const prompt = `Create a short, visually descriptive image prompt for a story titled "${details.title}". The story is in the ${genre} genre. The prompt should be a comma-separated list of keywords in a vibrant anime style.`;
+    const prompt = `You are a creative assistant. Based on the following story details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
+
+Story Title: ${details.title}
+Genre: ${genre}
+Description: ${details.description}`;
 
     try {
-        // FIX: Added a specific, simple generationConfig for this call.
-        // This was the source of the original error.
         const imagePrompt = await generateStoryContinuation(
             {} as StoryDocument,
             [],
-            { temperature: 0.6, topP: 1.0, maxOutputTokens: 80 }, // Config for short, creative text
+            { temperature: 0.7, topP: 1.0, maxOutputTokens: 100 },
             undefined,
             prompt
         );
-        // FIX: Enhanced the fallback prompt to be more descriptive.
         return imagePrompt || `${details.title}, ${genre}, vibrant anime style, epic scene, cinematic lighting`;
     } catch (error) {
         console.error("Failed to generate image prompt, using fallback:", error);
@@ -96,9 +89,31 @@ async function generateImagePromptFromStory(details: GeneratedStoryDetails, genr
 
 /**
  * The main handler for the quick start process.
+ * This function is now robust to handle different call signatures.
  */
-export async function handleQuickStart(genre: string, user: Models.User<Models.Preferences>, router: { push: (href: Href) => void; }) {
-    if (!user) {
+export async function handleQuickStart(
+    genre: string, 
+    p2: string | Models.User<Models.Preferences>, 
+    p3: Models.User<Models.Preferences> | { push: (href: Href) => void; }, 
+    p4?: { push: (href: Href) => void; }
+) {
+    let tag: string;
+    let user: Models.User<Models.Preferences>;
+    let router: { push: (href: Href) => void; };
+
+    if (typeof p2 === 'string') {
+        tag = p2;
+        user = p3 as Models.User<Models.Preferences>;
+        router = p4!;
+    } else {
+        user = p2 as Models.User<Models.Preferences>;
+        router = p3 as { push: (href: Href) => void; };
+        tag = genre;
+        if (genre === "Modern Day Drama") tag = "Drama, 21st Century";
+        if (genre === "Medieval Drama") tag = "Drama, Medieval Times";
+    }
+
+    if (!user || !user.$id) {
         Alert.alert("Error", "You must be logged in to create a story.");
         return;
     }
@@ -130,7 +145,7 @@ export async function handleQuickStart(genre: string, user: Models.User<Models.P
 
     const storyData: Omit<StoryDocument, keyof Models.Document> = {
         ...storyDetails,
-        tags: genre.toLowerCase(),
+        tags: tag,
         ai_instruction: DEFAULT_AI_INSTRUCTIONS,
         ask_user_name: false,
         ask_user_age: false,
@@ -147,11 +162,10 @@ export async function handleQuickStart(genre: string, user: Models.User<Models.P
             storyData
         );
 
-        const newSession = await createNewSession(newStoryDocument as StoryDocument);
-
+        // MODIFIED: Removed createNewSession and now passing the new document ID directly.
         router.push({
-            pathname: '/play/[sessionId]',
-            params: { sessionId: newSession.sessionId, story: JSON.stringify(newStoryDocument) }
+            pathname: '/intro/[sessionId]',
+            params: { sessionId: newStoryDocument.$id, story: JSON.stringify(newStoryDocument) }
         });
 
     } catch (error: any) {

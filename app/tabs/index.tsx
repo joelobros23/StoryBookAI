@@ -86,7 +86,6 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  // MODIFIED: Simplified state to use StoryDocument directly
   const [allStories, setAllStories] = useState<StoryDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [playModalVisible, setPlayModalVisible] = useState(false);
@@ -109,7 +108,6 @@ export default function HomeScreen() {
             [Query.orderDesc('$createdAt')]
           );
           
-          // MODIFIED: Simplified logic, no need to fetch creator names anymore
           setAllStories(response.documents as StoryDocument[]);
 
         } catch (error: any) {
@@ -138,8 +136,18 @@ export default function HomeScreen() {
   const onGenreSelect = async (genre: string) => {
     setQuickStartModalVisible(false);
     if (!user) return;
+
+    // NEW: Map selected genre to a specific tag for storage
+    let tag = genre;
+    if (genre === "Modern Day Drama") {
+        tag = "Drama, 21st Century";
+    } else if (genre === "Medieval Drama") {
+        tag = "Drama, Medieval Times";
+    }
+
     setIsGenerating(true);
-    await handleQuickStart(genre, user, router);
+    // Pass both the original genre (for story generation) and the specific tag
+    await handleQuickStart(genre, tag, user, router);
     setIsGenerating(false);
   };
 
@@ -161,7 +169,6 @@ export default function HomeScreen() {
   const renderStoryCard = ({ item }: { item: StoryDocument }) => {
     const truncatedTitle = item.title.length > 15 ? item.title.substring(0, 15) + '...' : item.title;
     const truncatedDesc = item.description && item.description.length > 50 ? item.description.substring(0, 50) + '...' : item.description;
-    // NEW: Truncate tags string
     const truncatedTags = item.tags && item.tags.length > 15 ? item.tags.substring(0, 15) + '...' : item.tags;
 
     const imageSource = item.cover_image_id 
@@ -181,7 +188,6 @@ export default function HomeScreen() {
         <View style={styles.storyCardTextContainer}>
             <Text style={styles.storyCardTitle}>{truncatedTitle}</Text>
             <Text style={styles.storyCardDescription}>{truncatedDesc || 'No description available.'}</Text>
-            {/* MODIFIED: Replaced creator name with tags */}
             <View style={styles.metaItem}>
                 <Feather style={{marginRight: 5 }} name="tag" size={16} color="#a9a9a9" />
                 <Text style={styles.storyCardMetaText}>{truncatedTags || 'No tags'}</Text>
@@ -318,7 +324,6 @@ const styles = StyleSheet.create({
     padding: 15,
     justifyContent: 'space-between',
   },
-  // MODIFIED: Renamed style for clarity
   storyCardMetaText: {
     color: '#a9a9a9',
     fontSize: 12,
