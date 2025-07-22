@@ -4,8 +4,10 @@ import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Image,
     KeyboardAvoidingView,
     Platform,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -13,10 +15,11 @@ import {
     View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { saveSessionPlayerData } from '../../lib/history';
+// FIX: Import the 'users' service to correctly fetch creator profiles
+import { account, getImageUrl } from '../../lib/appwrite';
+import { createNewSession, saveSessionPlayerData } from '../../lib/history';
 import { PlayerData, StoryDocument } from '../types/story';
 
-// --- FIX: Removed 'start' as it's no longer a step ---
 type IntroStep = 'name' | 'gender' | 'age';
 type ViewMode = 'details' | 'questions';
 
@@ -29,8 +32,8 @@ export default function IntroScreen() {
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [playerData, setPlayerData] = useState<PlayerData>({});
     const [isLoading, setIsLoading] = useState(false);
-    // --- FIX: Add view mode state to manage the screen's content ---
     const [viewMode, setViewMode] = useState<ViewMode>('details');
+    const [creatorName, setCreatorName] = useState('');
 
     useEffect(() => {
         if (!storyString || !sessionId) {
@@ -39,6 +42,21 @@ export default function IntroScreen() {
         }
         const parsedStory = JSON.parse(storyString) as StoryDocument;
         setStory(parsedStory);
+
+        // FIX: Adopted the correct logic from index.tsx to fetch the creator's name
+        const fetchCreator = async () => {
+            if (parsedStory.userId) {
+                try {
+                    // Use the 'account' service to get a user by their ID
+                    const creator = await account.get();
+                    setCreatorName(creator.name);
+                } catch (error) {
+                    console.error("Failed to fetch creator name:", error);
+                    setCreatorName('Unknown');
+                }
+            }
+        };
+        fetchCreator();
 
         const requiredSteps: IntroStep[] = [];
         if (parsedStory.ask_user_name) requiredSteps.push('name');
@@ -60,25 +78,21 @@ export default function IntroScreen() {
     };
     
     const finishIntro = async (finalPlayerData: PlayerData) => {
-        if (!sessionId) return;
+        if (!story) return;
         setIsLoading(true);
         try {
+            const newSession = await createNewSession(story);
             if (Object.keys(finalPlayerData).length > 0) {
-                await saveSessionPlayerData(sessionId, finalPlayerData);
+                await saveSessionPlayerData(newSession.sessionId, finalPlayerData);
             }
-            proceedToGame();
+            router.replace({
+                pathname: '/play/[sessionId]',
+                params: { sessionId: newSession.sessionId, story: JSON.stringify(story) },
+            });
         } catch (error) {
-            Alert.alert("Error", "Could not save character details.");
+            Alert.alert("Error", "Could not create a new session.");
             setIsLoading(false);
         }
-    };
-
-    const proceedToGame = () => {
-        if (!sessionId) return;
-        router.replace({
-            pathname: '/play/[sessionId]',
-            params: { sessionId: sessionId, story: storyString },
-        });
     };
 
     const handlePrimaryButtonPress = () => {
@@ -90,10 +104,10 @@ export default function IntroScreen() {
     };
 
     const renderCurrentStep = () => {
-        if (isLoading || steps.length === 0) {
+        if (isLoading) {
             return <ActivityIndicator size="large" color="#c792ea" />;
         }
-
+        if (steps.length === 0) return null;
         const currentStep = steps[currentStepIndex];
         switch (currentStep) {
             case 'name':
@@ -109,20 +123,42 @@ export default function IntroScreen() {
     
     const renderStoryDetails = () => (
         <View style={styles.viewContainer}>
-            <View style={styles.header}>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
                 {story ? (
                     <>
+                        {story.cover_image_id && (
+                            <Image
+                                source={{ uri: getImageUrl(story.cover_image_id) }}
+                                style={styles.coverImage}
+                                resizeMode="cover"
+                            />
+                        )}
                         <Text style={styles.storyTitle}>{story.title}</Text>
                         <Text style={styles.storyDescription}>{story.description || 'No description provided.'}</Text>
+                        
+                        <View style={styles.metaContainer}>
+                            <View style={styles.metaItem}>
+                                <Feather name="tag" size={16} color="#a9a9a9" />
+                                <Text style={styles.metaText}>{story.tags || 'No genre'}</Text>
+                            </View>
+                            <View style={styles.metaItem}>
+                                <Feather name="user" size={16} color="#a9a9a9" />
+                                <Text style={styles.metaText}>{creatorName || 'Loading...'}</Text>
+                            </View>
+                        </View>
                     </>
                 ) : (
                     <ActivityIndicator color="#c792ea" />
                 )}
-            </View>
+            </ScrollView>
             <View style={styles.footer}>
-                <TouchableOpacity style={styles.button} onPress={handlePrimaryButtonPress}>
-                    <Text style={styles.buttonText}>{steps.length > 0 ? 'Play' : 'Start Story'}</Text>
-                    <Feather name={steps.length > 0 ? "user-plus" : "play"} size={20} color="#FFFFFF" style={{ marginLeft: 10 }} />
+                <TouchableOpacity style={styles.button} onPress={handlePrimaryButtonPress} disabled={isLoading}>
+                    {isLoading ? <ActivityIndicator color="#FFFFFF" /> : (
+                        <>
+                            <Text style={styles.buttonText}>{steps.length > 0 ? 'Play' : 'Start Story'}</Text>
+                            <Feather name={steps.length > 0 ? "user-plus" : "play"} size={20} color="#FFFFFF" style={{ marginLeft: 10 }} />
+                        </>
+                    )}
                 </TouchableOpacity>
             </View>
         </View>
@@ -152,19 +188,12 @@ export default function IntroScreen() {
 }
 
 // --- Step Components ---
-
 const NameStep = ({ onComplete }: { onComplete: (name: string) => void }) => {
     const [name, setName] = useState('');
     return (
         <View style={styles.stepContainer}>
             <Text style={styles.stepLabel}>What is your character's name?</Text>
-            <TextInput
-                style={styles.input}
-                placeholder="e.g., Alistair"
-                placeholderTextColor="#666"
-                value={name}
-                onChangeText={setName}
-            />
+            <TextInput style={styles.input} placeholder="e.g., Alistair" placeholderTextColor="#666" value={name} onChangeText={setName} />
             <TouchableOpacity style={[styles.button, !name && styles.disabledButton]} onPress={() => onComplete(name)} disabled={!name}>
                 <Text style={styles.buttonText}>Next</Text>
                 <Feather name="arrow-right" size={20} color="#FFFFFF" style={{ marginLeft: 10 }} />
@@ -172,35 +201,20 @@ const NameStep = ({ onComplete }: { onComplete: (name: string) => void }) => {
         </View>
     );
 };
-
 const GenderStep = ({ onComplete }: { onComplete: (gender: string) => void }) => (
     <View style={styles.stepContainer}>
         <Text style={styles.stepLabel}>What is your character's gender?</Text>
-        <TouchableOpacity style={styles.button} onPress={() => onComplete('Male')}>
-            <Text style={styles.buttonText}>Male</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={() => onComplete('Female')}>
-            <Text style={styles.buttonText}>Female</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={() => onComplete('Non-binary')}>
-            <Text style={styles.buttonText}>Non-binary</Text>
-        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={() => onComplete('Male')}><Text style={styles.buttonText}>Male</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={() => onComplete('Female')}><Text style={styles.buttonText}>Female</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={() => onComplete('Non-binary')}><Text style={styles.buttonText}>Non-binary</Text></TouchableOpacity>
     </View>
 );
-
 const AgeStep = ({ onComplete }: { onComplete: (age: string) => void }) => {
     const [age, setAge] = useState('');
     return (
         <View style={styles.stepContainer}>
             <Text style={styles.stepLabel}>What is your character's age?</Text>
-            <TextInput
-                style={styles.input}
-                placeholder="e.g., 25"
-                placeholderTextColor="#666"
-                value={age}
-                onChangeText={setAge}
-                keyboardType="number-pad"
-            />
+            <TextInput style={styles.input} placeholder="e.g., 25" placeholderTextColor="#666" value={age} onChangeText={setAge} keyboardType="number-pad" />
             <TouchableOpacity style={[styles.button, !age && styles.disabledButton]} onPress={() => onComplete(age)} disabled={!age}>
                 <Text style={styles.buttonText}>Finish</Text>
                 <Feather name="check" size={20} color="#FFFFFF" style={{ marginLeft: 10 }} />
@@ -219,16 +233,26 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'space-between',
     },
+    scrollContent: {
+        padding: 20,
+        alignItems: 'center',
+    },
     header: {
-        paddingHorizontal: 20,
-        paddingTop: 30,
+        width: '100%',
         alignItems: 'center',
     },
     backButton: {
         position: 'absolute',
         left: 20,
-        top: 30,
+        top: 10,
         zIndex: 1,
+    },
+    coverImage: {
+        width: '100%',
+        height: 250,
+        borderRadius: 12,
+        marginBottom: 20,
+        backgroundColor: '#1e1e1e',
     },
     storyTitle: {
         color: '#FFFFFF',
@@ -241,6 +265,30 @@ const styles = StyleSheet.create({
         color: '#a9a9a9',
         fontSize: 16,
         textAlign: 'center',
+        marginBottom: 20,
+    },
+    metaContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        marginTop: 10,
+        paddingVertical: 10,
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: '#2a2a2a',
+        width: '100%',
+    },
+    metaItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 15,
+    },
+    metaText: {
+        color: '#a9a9a9',
+        fontSize: 14,
+        marginLeft: 8,
+        textTransform: 'capitalize',
     },
     content: {
         flex: 1,
@@ -256,6 +304,8 @@ const styles = StyleSheet.create({
     },
     footer: {
         padding: 20,
+        borderTopWidth: 1,
+        borderColor: '#1e1e1e',
     },
     stepContainer: {
         alignItems: 'center',

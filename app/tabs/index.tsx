@@ -6,7 +6,6 @@ import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleShee
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { account, databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
-import { createNewSession } from '../../lib/history';
 import { handleQuickStart } from '../../lib/quickstart';
 import { StoryDocument } from '../types/story';
 
@@ -164,16 +163,14 @@ export default function HomeScreen() {
   const handleStartStory = async (story: StoryDocument) => {
     setIsGenerating(true);
     try {
-        const newSession = await createNewSession(story);
+
         router.push({
             pathname: '/intro/[sessionId]',
-            params: { sessionId: newSession.sessionId, story: JSON.stringify(newSession.story) },
+            params: { sessionId: story.$id, story: JSON.stringify(story) },
         });
     } catch (error) {
         console.error("Failed to create new session:", error);
         Alert.alert("Error", "Could not start a new story session.");
-    } finally {
-        setIsGenerating(false);
     }
   };
 
@@ -198,7 +195,11 @@ export default function HomeScreen() {
         <View style={styles.storyCardTextContainer}>
             <Text style={styles.storyCardTitle}>{truncatedTitle}</Text>
             <Text style={styles.storyCardDescription}>{truncatedDesc || 'No description available.'}</Text>
-            <Text style={styles.storyCardCreator}>{item.creatorName || 'Unknown'}</Text>
+            <View style={styles.metaItem}>
+                {/* Corrected line below */}
+                <Feather style={{marginRight: 5 }} name="user" size={16} color="#a9a9a9" />
+                <Text style={styles.storyCardCreator}>{item.creatorName || 'Unknown'}</Text>
+            </View>
         </View>
       </TouchableOpacity>
     );
@@ -251,6 +252,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
+      metaItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 0,
+    },
   scrollContent: {
     padding: 20,
   },

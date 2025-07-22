@@ -6,7 +6,8 @@ import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, deleteImageFile, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
-import { createNewSession, deleteStorySession, getStoryHistory } from '../../lib/history';
+// FIX: createNewSession is no longer needed here
+import { deleteStorySession, getStoryHistory } from '../../lib/history';
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
@@ -70,20 +71,15 @@ export default function ProfileScreen() {
         await logout();
     };
 
-    const handleStartCreation = async (story: StoryDocument) => {
-        setIsLoading(true);
-        try {
-            const newSession = await createNewSession(story);
-            router.push({
-                pathname: '/intro/[sessionId]',
-                params: { sessionId: newSession.sessionId, story: JSON.stringify(newSession.story) },
-            });
-        } catch (error) {
-            console.error("Failed to create new session:", error);
-            Alert.alert("Error", "Could not start a new story session.");
-        } finally {
-            setIsLoading(false);
-        }
+    // FIX: This function no longer creates a session. It just navigates to the intro screen.
+    // A session will only be created when the user clicks "Play" on that screen.
+    const handleStartCreation = (story: StoryDocument) => {
+        router.push({
+            // The file is named [sessionId].tsx, so we pass the story's unique ID ($id)
+            // as the 'sessionId' parameter for now. It's not a real session ID yet.
+            pathname: '/intro/[sessionId]',
+            params: { sessionId: story.$id, story: JSON.stringify(story) },
+        });
     };
 
     const handleContinueSession = (session: StorySession) => {
@@ -172,7 +168,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
     );
 
-    // FIX: Updated renderHistoryItem to display the local cover image
     const renderHistoryItem = ({ item }: { item: StorySession }) => (
         <TouchableOpacity 
             style={styles.storyCard} 
