@@ -5,7 +5,7 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { account, databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
+import { databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { handleQuickStart } from '../../lib/quickstart';
 import { StoryDocument } from '../types/story';
 
@@ -83,19 +83,16 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
   );
 };
 
-type StoryWithCreator = StoryDocument & { cover_image_id?: string; creatorName?: string };
-
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [allStories, setAllStories] = useState<StoryWithCreator[]>([]);
+  // MODIFIED: Simplified state to use StoryDocument directly
+  const [allStories, setAllStories] = useState<StoryDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [playModalVisible, setPlayModalVisible] = useState(false);
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // FIX: Replaced useEffect with useFocusEffect to prevent race conditions on login/logout.
-  // This ensures data is fetched only when the screen is fully focused and the user session is stable.
   useFocusEffect(
     useCallback(() => {
       const fetchAllStories = async () => {
@@ -112,22 +109,8 @@ export default function HomeScreen() {
             [Query.orderDesc('$createdAt')]
           );
           
-          const storiesWithCreators = await Promise.all(
-            response.documents.map(async (doc) => {
-              let creatorName = 'Unknown';
-              try {
-                if (doc.userId) {
-                  const creator = await account.get();
-                  creatorName = creator.name;
-                }
-              } catch (e) {
-                console.error(`Failed to fetch user ${doc.userId}`, e);
-              }
-              return { ...doc, creatorName } as StoryWithCreator;
-            })
-          );
-          
-          setAllStories(storiesWithCreators);
+          // MODIFIED: Simplified logic, no need to fetch creator names anymore
+          setAllStories(response.documents as StoryDocument[]);
 
         } catch (error: any) {
           if (error.code !== 401) {
@@ -140,7 +123,7 @@ export default function HomeScreen() {
       };
 
       fetchAllStories();
-    }, [user]) // The effect will re-run if the user object changes (e.g., login/logout)
+    }, [user])
   );
 
   const handleStartNewStory = () => {
@@ -163,7 +146,6 @@ export default function HomeScreen() {
   const handleStartStory = async (story: StoryDocument) => {
     setIsGenerating(true);
     try {
-
         router.push({
             pathname: '/intro/[sessionId]',
             params: { sessionId: story.$id, story: JSON.stringify(story) },
@@ -171,12 +153,16 @@ export default function HomeScreen() {
     } catch (error) {
         console.error("Failed to create new session:", error);
         Alert.alert("Error", "Could not start a new story session.");
+    } finally {
+        setIsGenerating(false);
     }
   };
 
-  const renderStoryCard = ({ item }: { item: StoryWithCreator }) => {
+  const renderStoryCard = ({ item }: { item: StoryDocument }) => {
     const truncatedTitle = item.title.length > 15 ? item.title.substring(0, 15) + '...' : item.title;
     const truncatedDesc = item.description && item.description.length > 50 ? item.description.substring(0, 50) + '...' : item.description;
+    // NEW: Truncate tags string
+    const truncatedTags = item.tags && item.tags.length > 15 ? item.tags.substring(0, 15) + '...' : item.tags;
 
     const imageSource = item.cover_image_id 
       ? { uri: getImageUrl(item.cover_image_id) } 
@@ -195,10 +181,10 @@ export default function HomeScreen() {
         <View style={styles.storyCardTextContainer}>
             <Text style={styles.storyCardTitle}>{truncatedTitle}</Text>
             <Text style={styles.storyCardDescription}>{truncatedDesc || 'No description available.'}</Text>
+            {/* MODIFIED: Replaced creator name with tags */}
             <View style={styles.metaItem}>
-                {/* Corrected line below */}
-                <Feather style={{marginRight: 5 }} name="user" size={16} color="#a9a9a9" />
-                <Text style={styles.storyCardCreator}>{item.creatorName || 'Unknown'}</Text>
+                <Feather style={{marginRight: 5 }} name="tag" size={16} color="#a9a9a9" />
+                <Text style={styles.storyCardMetaText}>{truncatedTags || 'No tags'}</Text>
             </View>
         </View>
       </TouchableOpacity>
@@ -252,11 +238,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
-      metaItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginHorizontal: 0,
-    },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 0,
+  },
   scrollContent: {
     padding: 20,
   },
@@ -332,9 +318,11 @@ const styles = StyleSheet.create({
     padding: 15,
     justifyContent: 'space-between',
   },
-  storyCardCreator: {
+  // MODIFIED: Renamed style for clarity
+  storyCardMetaText: {
     color: '#a9a9a9',
     fontSize: 12,
+    textTransform: 'capitalize',
   },
   storyCardTitle: {
     color: '#FFFFFF',

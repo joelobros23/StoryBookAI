@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import { PlayerData, StoryDocument, StoryEntry, StorySession } from '../app/types/story';
+import { GenerationConfig, PlayerData, StoryDocument, StoryEntry, StorySession } from '../app/types/story';
 import { downloadAndSaveImage, ID } from './appwrite';
 
 const HISTORY_KEY = 'story_history';
@@ -74,6 +74,12 @@ export const createNewSession = async (story: StoryDocument): Promise<StorySessi
         sessionDate: new Date().toISOString(),
         playerData: {},
         localCoverImagePath: localCoverImagePath || undefined,
+        // NEW: Add default generation config to each new session
+        generationConfig: {
+            temperature: 0.8,
+            topP: 0.9,
+            maxOutputTokens: 200,
+        },
     };
     const updatedHistory = [newSession, ...history];
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
@@ -108,7 +114,7 @@ export const saveSessionPlayerData = async (sessionId: string, playerData: Playe
 
         if (sessionIndex !== -1) {
             history[sessionIndex].playerData = playerData;
-            history[sessionIndex].sessionDate = new Date().toISOString(); // Also update timestamp
+            history[sessionIndex].sessionDate = new Date().toISOString();
             await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
         }
     } catch (e) {
@@ -116,7 +122,24 @@ export const saveSessionPlayerData = async (sessionId: string, playerData: Playe
     }
 };
 
-// NEW: Function to update only the cover image of a session
+/**
+ * NEW: Saves the generation config for a specific story session.
+ */
+export const updateSessionGenerationConfig = async (sessionId: string, config: GenerationConfig) => {
+    try {
+        const history = await getStoryHistory();
+        const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
+
+        if (sessionIndex !== -1) {
+            history[sessionIndex].generationConfig = config;
+            await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        }
+    } catch (e) {
+        console.error("Failed to save session generation config.", e);
+    }
+};
+
+
 export const updateSessionCoverImage = async (sessionId: string, newImagePath: string | null) => {
     try {
         const history = await getStoryHistory();
@@ -132,27 +155,17 @@ export const updateSessionCoverImage = async (sessionId: string, newImagePath: s
     }
 };
 
-/**
- * Deletes a story session from local history.
- * @param sessionId - The ID of the session to delete.
- */
 export const deleteStorySession = async (sessionId: string) => {
     try {
         const history = await getStoryHistory();
-        
-        // Finds the session to be deleted
         const sessionToDelete = history.find(session => session.sessionId === sessionId);
         
-        // Checks if a local image path exists and deletes the file
         if (sessionToDelete && sessionToDelete.localCoverImagePath) {
             await FileSystem.deleteAsync(sessionToDelete.localCoverImagePath, { idempotent: true });
-            console.log(`Local image ${sessionToDelete.localCoverImagePath} deleted.`);
         }
 
-        // Removes the session from the history array
         const updatedHistory = history.filter(session => session.sessionId !== sessionId);
         await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
-        console.log(`Session with ID ${sessionId} deleted.`);
     } catch (e) {
         console.error("Failed to delete story session.", e);
     }

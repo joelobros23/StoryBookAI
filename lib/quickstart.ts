@@ -3,9 +3,8 @@ import { Href } from 'expo-router';
 import { Alert } from 'react-native';
 import { StoryDocument } from '../app/types/story';
 import { databaseId, databases, ID, storiesCollectionId, uploadImageFile } from './appwrite';
-import { createNewSession } from './history';
-// FIX: Import the text generation function as well
 import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
+import { createNewSession } from './history';
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -16,10 +15,6 @@ Instructions:
 - Generally use second person (like this: 'He looks at you.'). But use third person if that's what the story seems to follow. 
 - Never decide or write for the user. If the input ends mid sentence, continue where it left off.
 - > tokens mean a character action attempt. You should describe what happens when the player attempts that action. Generating '###' is forbidden.`;
-
-// --- Gemini API Configuration ---
-const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
 type GeneratedStoryDetails = {
     title: string;
@@ -46,6 +41,12 @@ async function generateStoryDetailsFromGenre(genre: string): Promise<GeneratedSt
     };
     const prompt = `Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. Provide a title, a short description, an exciting opening scene for the player, a brief summary of the overall story, and 2-3 essential plot points for the AI to remember. Respond with only a valid JSON object that conforms to the following schema: ${JSON.stringify(schema)}`;
     try {
+        // NOTE: This function still uses the older single-key method.
+        // It's separate from the multi-key rotation system in gemini.ts.
+        // For consistency, this could be updated in the future.
+        const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+
         const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -64,24 +65,31 @@ async function generateStoryDetailsFromGenre(genre: string): Promise<GeneratedSt
     }
 }
 
-// NEW: Function to generate a high-quality image prompt from story details
+/**
+ * Generates a high-quality, concise image prompt from story details.
+ * @param details The generated story details.
+ * @param genre The genre of the story.
+ * @returns A string suitable for use as an image generation prompt.
+ */
 async function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string): Promise<string> {
-    const prompt = `You are a creative assistant. Based on the following story details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
-
-Story Title: "${details.title}"
-Story Description: "${details.description}"
-Genre: ${genre}
-
-Create a prompt that is a single sentence or a comma-separated list of keywords.`;
+    // A more direct and simpler prompt to get good keywords for the image generator.
+    const prompt = `Create a short, visually descriptive image prompt for a story titled "${details.title}". The story is in the ${genre} genre. The prompt should be a comma-separated list of keywords in a vibrant anime style.`;
 
     try {
-        // We can reuse the text generation function from gemini.ts
-        // We pass a dummy story and empty history since this is a one-off generation.
-        const imagePrompt = await generateStoryContinuation({} as StoryDocument, [], undefined, prompt);
-        return imagePrompt || `${details.title}, Anime Style`; // Fallback to the old method
+        // FIX: Added a specific, simple generationConfig for this call.
+        // This was the source of the original error.
+        const imagePrompt = await generateStoryContinuation(
+            {} as StoryDocument,
+            [],
+            { temperature: 0.6, topP: 1.0, maxOutputTokens: 80 }, // Config for short, creative text
+            undefined,
+            prompt
+        );
+        // FIX: Enhanced the fallback prompt to be more descriptive.
+        return imagePrompt || `${details.title}, ${genre}, vibrant anime style, epic scene, cinematic lighting`;
     } catch (error) {
         console.error("Failed to generate image prompt, using fallback:", error);
-        return `${details.title}, Anime Style`; // Fallback to the old method
+        return `${details.title}, ${genre}, vibrant anime style, epic scene, cinematic lighting`;
     }
 }
 
@@ -105,7 +113,6 @@ export async function handleQuickStart(genre: string, user: Models.User<Models.P
     let uploadedImageId: string | undefined = undefined;
     try {
         console.log("Generating enhanced image prompt...");
-        // FIX: Call the new function to generate a better prompt
         const imagePrompt = await generateImagePromptFromStory(storyDetails, genre);
         
         console.log("Generating cover image with prompt:", imagePrompt);

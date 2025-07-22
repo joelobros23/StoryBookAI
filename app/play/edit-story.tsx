@@ -17,9 +17,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ID } from '../../lib/appwrite';
 import { generateImageFromPrompt } from '../../lib/gemini';
-import { getStorySession, saveSessionPlayerData, updateSessionCoverImage, updateStoryInSession } from '../../lib/history';
+import { getStorySession, saveSessionPlayerData, updateSessionCoverImage, updateSessionGenerationConfig, updateStoryInSession } from '../../lib/history';
 import { DEFAULT_AI_INSTRUCTIONS } from '../../lib/quickstart';
-import { PlayerData, StoryDocument } from '../types/story';
+import { GenerationConfig, PlayerData, StoryDocument } from '../types/story';
 
 // --- Components ---
 
@@ -35,7 +35,7 @@ type FormInputProps = {
   editable?: boolean;
   keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
 };
-const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, placeholder, multiline = false, height = 40, showDefaultButton = false, onInsertDefault, editable = true }) => (
+const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, placeholder, multiline = false, height = 40, showDefaultButton = false, onInsertDefault, editable = true, keyboardType = 'default' }) => (
   <View style={styles.inputContainer}>
     <View style={styles.labelContainer}>
         <Text style={styles.label}>{label}</Text>
@@ -53,6 +53,7 @@ const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, place
       placeholderTextColor="#666"
       multiline={multiline}
       editable={editable}
+      keyboardType={keyboardType}
     />
   </View>
 );
@@ -90,7 +91,7 @@ export default function EditStoryScreen() {
   
   // Image State
   const [localImagePath, setLocalImagePath] = useState<string | null>(null);
-  const [newGeneratedImage, setNewGeneratedImage] = useState<string | null>(null); // Base64
+  const [newGeneratedImage, setNewGeneratedImage] = useState<string | null>(null);
   const [imagePrompt, setImagePrompt] = useState('');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
@@ -107,6 +108,10 @@ export default function EditStoryScreen() {
   const [storySummary, setStorySummary] = useState(initialStory?.story_summary || '');
   const [plotEssentials, setPlotEssentials] = useState(initialStory?.plot_essentials || '');
 
+  // NEW: AI Generation Config State
+  const [temperature, setTemperature] = useState('0.8');
+  const [topP, setTopP] = useState('0.9');
+
   useEffect(() => {
     const fetchSessionData = async () => {
       if (!sessionId) return;
@@ -117,6 +122,11 @@ export default function EditStoryScreen() {
           setPlayerAge(session.playerData?.age || '');
           setPlayerGender(session.playerData?.gender || '');
           setLocalImagePath(session.localCoverImagePath || null);
+          // NEW: Load generation config from the session
+          if (session.generationConfig) {
+            setTemperature(String(session.generationConfig.temperature));
+            setTopP(String(session.generationConfig.topP));
+          }
         }
       } catch (error) {
         console.error("Failed to load session data:", error);
@@ -151,21 +161,18 @@ export default function EditStoryScreen() {
     try {
       // --- Handle Image Update ---
       if (newGeneratedImage) {
-        // 1. Delete the old image file if it exists
         if (localImagePath) {
           await FileSystem.deleteAsync(localImagePath, { idempotent: true });
         }
-        // 2. Save the new image to a local file
         const newFileName = `${ID.unique()}.png`;
         const newLocalUri = FileSystem.documentDirectory + newFileName;
         await FileSystem.writeAsStringAsync(newLocalUri, newGeneratedImage, {
           encoding: FileSystem.EncodingType.Base64,
         });
-        // 3. Update the session with the new image path
         await updateSessionCoverImage(sessionId, newLocalUri);
       }
 
-      // --- Handle Story and Player Data Update ---
+      // --- Handle Story, Player, and AI Config Data Update ---
       const updatedStory: StoryDocument = {
         ...initialStory,
         title,
@@ -180,8 +187,16 @@ export default function EditStoryScreen() {
       };
       const updatedPlayerData: PlayerData = { name: playerName, age: playerAge, gender: playerGender };
       
+      // NEW: Construct and save the updated generation config
+      const updatedGenerationConfig: GenerationConfig = {
+          temperature: parseFloat(temperature) || 0.8,
+          topP: parseFloat(topP) || 0.9,
+          maxOutputTokens: 200, // This remains constant for now
+      };
+
       await updateStoryInSession(sessionId, updatedStory);
       await saveSessionPlayerData(sessionId, updatedPlayerData);
+      await updateSessionGenerationConfig(sessionId, updatedGenerationConfig);
       
       Alert.alert("Success", "Changes saved successfully!");
       router.back();
@@ -269,6 +284,23 @@ export default function EditStoryScreen() {
             />
             <FormInput label="Story Summary" value={storySummary} onChangeText={setStorySummary} placeholder="Main story summary" multiline height={100} />
             <FormInput label="Plot Essentials" value={plotEssentials} onChangeText={setPlotEssentials} placeholder="Key plot points" multiline height={100} />
+          
+            {/* NEW: AI Settings Section */}
+            <Text style={styles.sectionTitle}>AI Settings</Text>
+            <FormInput 
+                label="Temperature (Creativity)" 
+                value={temperature} 
+                onChangeText={setTemperature} 
+                placeholder="e.g., 0.8"
+                keyboardType="numeric"
+            />
+            <FormInput 
+                label="Top-P (Relevance)" 
+                value={topP} 
+                onChangeText={setTopP} 
+                placeholder="e.g., 0.9"
+                keyboardType="numeric"
+            />
           </View>
         )}
 

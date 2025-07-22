@@ -18,7 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateStoryContinuation as generateAiResponse } from '../../lib/gemini';
 import { getStorySession, saveStorySessionContent } from '../../lib/history';
-import { PlayerData, StoryDocument, StoryEntry } from '../types/story';
+import { GenerationConfig, PlayerData, StoryDocument, StoryEntry } from '../types/story';
 
 type InputMode = 'Do' | 'Say' | 'Story';
 
@@ -45,6 +45,8 @@ export default function PlayStoryScreen() {
     const [story, setStory] = useState<StoryDocument | null>(null);
     const [storyContent, setStoryContent] = useState<StoryEntry[]>([]);
     const [playerData, setPlayerData] = useState<PlayerData | null>(null);
+    // NEW: State for generation config
+    const [generationConfig, setGenerationConfig] = useState<GenerationConfig | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isTakingTurn, setIsTakingTurn] = useState(false);
     const [isAiThinking, setIsAiThinking] = useState(false);
@@ -84,8 +86,12 @@ export default function PlayStoryScreen() {
             const reloadStory = async () => {
                 if (!sessionId) return;
                 const session = await getStorySession(sessionId);
-                if (session?.story) {
+                if (session) {
                     setStory(session.story);
+                    // NEW: Reload generation config when screen is focused
+                    if (session.generationConfig) {
+                        setGenerationConfig(session.generationConfig);
+                    }
                 }
             };
             reloadStory();
@@ -100,35 +106,50 @@ export default function PlayStoryScreen() {
                 return;
             }
             if (!storyString) {
-                setError("Story data is missing.");
-                setIsLoading(false);
-                return;
+                // Attempt to load from history if storyString is not in params
+                const session = await getStorySession(sessionId);
+                if (session) {
+                    setStory(session.story);
+                    const contentWithIds = session.content.map((entry, index) => ({ ...entry, id: entry.id || `${Date.now()}-${index}` }));
+                    setStoryContent(contentWithIds);
+                    setPlayerData(session.playerData || null);
+                    setGenerationConfig(session.generationConfig || { temperature: 0.8, topP: 0.9, maxOutputTokens: 200 });
+                } else {
+                    setError("Story data is missing and could not be recovered.");
+                    setIsLoading(false);
+                    return;
+                }
+            } else {
+                 try {
+                    const storyData = JSON.parse(storyString) as StoryDocument;
+                    setStory(storyData);
+                    
+                    const savedSession = await getStorySession(sessionId);
+                    if (savedSession) {
+                        const contentWithIds = savedSession.content.map((entry, index) => ({ ...entry, id: entry.id || `${Date.now()}-${index}` }));
+                        if (contentWithIds.length > 0) {
+                            setStoryContent(contentWithIds);
+                        } else if (storyData.opening) {
+                            setStoryContent([{ id: Date.now().toString(), type: 'ai', text: storyData.opening, isNew: true }]);
+                        }
+                        if (savedSession.playerData) setPlayerData(savedSession.playerData);
+                        // NEW: Load generation config from session, with a fallback
+                        if (savedSession.generationConfig) {
+                            setGenerationConfig(savedSession.generationConfig);
+                        } else {
+                            setGenerationConfig({ temperature: 0.8, topP: 0.9, maxOutputTokens: 200 });
+                        }
+                    } else if (storyData.opening) {
+                         setStoryContent([{ id: Date.now().toString(), type: 'ai', text: storyData.opening, isNew: true }]);
+                         setGenerationConfig({ temperature: 0.8, topP: 0.9, maxOutputTokens: 200 });
+                    }
+                } catch (e) {
+                    console.error("Failed to load story session:", e);
+                    setError("Could not load the story session.");
+                }
             }
 
-            try {
-                const storyData = JSON.parse(storyString) as StoryDocument;
-                setStory(storyData);
-                
-                const savedSession = await getStorySession(sessionId);
-                if (savedSession) {
-                    const contentWithIds = savedSession.content.map((entry, index) => ({ ...entry, id: entry.id || `${Date.now()}-${index}` }));
-                    if (contentWithIds.length > 0) {
-                        setStoryContent(contentWithIds);
-                    } else if (storyData.opening) {
-                        setStoryContent([{ id: Date.now().toString(), type: 'ai', text: storyData.opening, isNew: true }]);
-                    }
-                    if (savedSession.playerData) {
-                        setPlayerData(savedSession.playerData);
-                    }
-                } else if (storyData.opening) {
-                     setStoryContent([{ id: Date.now().toString(), type: 'ai', text: storyData.opening, isNew: true }]);
-                }
-            } catch (e) {
-                console.error("Failed to load story session:", e);
-                setError("Could not load the story session.");
-            } finally {
-                setIsLoading(false);
-            }
+            setIsLoading(false);
         };
         loadStory();
     }, [sessionId, storyString]);
@@ -143,9 +164,11 @@ export default function PlayStoryScreen() {
     }, [storyContent, sessionId]);
 
     const handleGenerateStoryContinuation = async (currentHistory: StoryEntry[], action?: string) => {
-        if (!story) return;
+        // MODIFIED: Check for story and generationConfig
+        if (!story || !generationConfig) return;
         setIsAiThinking(true);
-        const aiText = await generateAiResponse(story, currentHistory, playerData || undefined, action);
+        // MODIFIED: Pass generationConfig to the AI function
+        const aiText = await generateAiResponse(story, currentHistory, generationConfig, playerData || undefined, action);
         if (aiText) {
             setStoryContent(prev => {
                 const oldContent = prev.map(entry => ({ ...entry, isNew: false }));

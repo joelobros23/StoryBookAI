@@ -1,6 +1,15 @@
 import { Models } from 'appwrite';
 
 /**
+ * Defines the AI generation settings for a story session.
+ */
+export type GenerationConfig = {
+    temperature: number;
+    topP: number;
+    maxOutputTokens: number;
+};
+
+/**
  * Defines the full structure of a story document, including all AI-related fields.
  * This is the single source of truth for what a story object contains.
  */
@@ -16,7 +25,7 @@ export type StoryDocument = Models.Document & {
     ask_user_age: boolean;
     ask_user_gender: boolean;
     userId: string;
-    cover_image_id?: string; // Ensure this is included
+    cover_image_id?: string;
 };
 
 /**
@@ -48,6 +57,7 @@ export type StorySession = {
     sessionId: string;
     sessionDate: string;
     playerData?: PlayerData;
-    // FIX: Add the new property for the local image path
     localCoverImagePath?: string;
+    // NEW: Added generation config to the session type
+    generationConfig?: GenerationConfig;
 };

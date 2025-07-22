@@ -1,5 +1,5 @@
 import { Alert } from 'react-native';
-import { PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
+import { GenerationConfig, PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
 
 // An array of API keys to use for requests.
 const API_KEYS = [
@@ -17,11 +17,6 @@ const IMAGE_API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/mod
 
 /**
  * A utility function to try fetching from the Gemini API with key rotation.
- * It will iterate through the provided API_KEYS until a request is successful.
- * @param baseUrl The base URL for the API endpoint.
- * @param payload The request payload.
- * @returns The JSON response from the API.
- * @throws An error if all API keys fail.
  */
 const fetchWithKeyRotation = async (baseUrl: string, payload: object) => {
     for (const key of API_KEYS) {
@@ -36,50 +31,37 @@ const fetchWithKeyRotation = async (baseUrl: string, payload: object) => {
             if (response.ok) {
                 return await response.json(); // Success, return the response
             }
-            // If response is not ok, log it and try the next key
             console.warn(`API request with a key failed with status: ${response.status}`);
 
         } catch (error) {
-            // This catches network errors or other issues with the fetch itself
             console.error(`Fetch failed for a key:`, error);
         }
     }
-    // If the loop completes, all keys have failed
     throw new Error('All API keys failed to fetch a response.');
 };
 
 
 /**
- * Finds the last complete sentence in a block of text and discards any trailing fragments.
- * This is useful when an AI response is cut off by token limits.
- * @param text The raw text from the AI.
- * @returns The text trimmed to the last complete sentence, or an empty string if no complete sentence is found.
+ * Finds the last complete sentence in a block of text.
  */
 const trimToCompleteSentence = (text: string): string => {
-    // Find the last occurrence of a sentence-ending punctuation mark.
     const lastDot = text.lastIndexOf('.');
     const lastQuestion = text.lastIndexOf('?');
     const lastExclamation = text.lastIndexOf('!');
-
-    // Determine the position of the very last punctuation mark.
     const lastPunctuationIndex = Math.max(lastDot, lastQuestion, lastExclamation);
 
     if (lastPunctuationIndex > -1) {
-        // If a punctuation mark is found, return the substring up to and including it.
-        // This effectively cuts off any incomplete sentence that follows.
         return text.substring(0, lastPunctuationIndex + 1);
     }
-
-    // If no sentence-ending punctuation is found, it means the entire text is a single,
-    // incomplete fragment. In this case, it's better to return nothing.
     return '';
 };
 
 
 /**
  * Generates the next part of the story using the Gemini API.
- * @param story - The core story document with instructions and summary.
- * @param currentHistory - The existing story entries (user and AI turns).
+ * @param story - The core story document.
+ * @param currentHistory - The existing story entries.
+ * @param generationConfig - The AI generation settings (temperature, topP, etc.).
  * @param playerData - Optional data about the player character.
  * @param action - The latest action or input from the user.
  * @returns The new AI-generated text, or null if an error occurs.
@@ -87,6 +69,7 @@ const trimToCompleteSentence = (text: string): string => {
 export const generateStoryContinuation = async (
     story: StoryDocument,
     currentHistory: StoryEntry[],
+    generationConfig: GenerationConfig, // MODIFIED: Added generationConfig as a required parameter
     playerData?: PlayerData,
     action?: string
 ): Promise<string | null> => {
@@ -114,49 +97,30 @@ export const generateStoryContinuation = async (
     ${action || 'Continue the story.'}`;
 
     try {
+        // MODIFIED: The payload now uses the passed-in generationConfig.
         const payload = {
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 200, temperature: 0.8, topP: 0.9 },
+            generationConfig: generationConfig, // Use the dynamic config
             safetySettings: [
-                {
-                    category: 'HARM_CATEGORY_HARASSMENT',
-                    threshold: 'BLOCK_NONE',
-                },
-                {
-                    category: 'HARM_CATEGORY_HATE_SPEECH',
-                    threshold: 'BLOCK_NONE',
-                },
-                {
-                    category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                    threshold: 'BLOCK_NONE',
-                },
-                {
-                    category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                    threshold: 'BLOCK_NONE',
-                },
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
             ]
         };
 
         const result = await fetchWithKeyRotation(API_URL_BASE, payload);
-
         const candidate = result.candidates?.[0];
 
         if (candidate?.content?.parts?.[0]?.text) {
             const rawText = candidate.content.parts[0].text.trim();
             const finishReason = candidate.finishReason;
 
-            // If the AI was cut off because it hit the token limit,
-            // we process the text to remove the final, incomplete sentence.
             if (finishReason === 'MAX_TOKENS') {
                 return trimToCompleteSentence(rawText);
             }
-            
-            // Otherwise, we can assume the response is complete.
             return rawText;
-
         } else {
-            // The response was likely blocked or empty.
-            // We've removed the explicit block reason check.
             throw new Error("Invalid or empty response from AI.");
         }
     } catch (err: any) {
@@ -166,12 +130,9 @@ export const generateStoryContinuation = async (
     }
 };
 
-// Function to generate an image from a text prompt
+// Function to generate an image from a text prompt (unchanged)
 export const generateImageFromPrompt = async (prompt: string): Promise<string | null> => {
-    
     console.log("Generating image with prompt:", prompt);
-    console.log("Using model: gemini-2.0-flash-preview-image-generation");
-
     try {
         const payload = {
             contents: [{
@@ -182,11 +143,8 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string | 
                 responseModalities: ["IMAGE", "TEXT"]
             }
         };
-
         const result = await fetchWithKeyRotation(IMAGE_API_URL_BASE, payload);
-        
         const candidate = result.candidates?.[0];
-        // FIX: Explicitly typed the parameter 'p' as 'any' to resolve the implicit 'any' type error.
         const imagePart = candidate?.content?.parts?.find((p: any) => p.inlineData);
 
         if (imagePart?.inlineData?.data) {
