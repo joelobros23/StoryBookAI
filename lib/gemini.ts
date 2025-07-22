@@ -1,9 +1,52 @@
 import { Alert } from 'react-native';
 import { PlayerData, StoryDocument, StoryEntry } from '../app/types/story';
 
-const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
-const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${API_KEY}`;
+// An array of API keys to use for requests.
+const API_KEYS = [
+    'AIzaSyAhz-vMTfd4NjDreB-qz0mjGVBVYvNon00',
+    'AIzaSyCFUZQnETsNs4eGafD1_9P4fh-RdA0TqVE',
+    'AIzaSyA9Ak4knLXSNP2Q510eEvpObApuE3QGTOM',
+    'AIzaSyAhXBYMc_rY_ILGseYrausyoZAQHaMm-Ac',
+    'AIzaSyBnBNjIkFDu5Y2tnI5M46G7gUTTnhTy5mo'
+];
+
+// Base URLs for the Gemini API
+const API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=';
+const IMAGE_API_URL_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=';
+
+
+/**
+ * A utility function to try fetching from the Gemini API with key rotation.
+ * It will iterate through the provided API_KEYS until a request is successful.
+ * @param baseUrl The base URL for the API endpoint.
+ * @param payload The request payload.
+ * @returns The JSON response from the API.
+ * @throws An error if all API keys fail.
+ */
+const fetchWithKeyRotation = async (baseUrl: string, payload: object) => {
+    for (const key of API_KEYS) {
+        const fullUrl = `${baseUrl}${key}`;
+        try {
+            const response = await fetch(fullUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                return await response.json(); // Success, return the response
+            }
+            // If response is not ok, log it and try the next key
+            console.warn(`API request with a key failed with status: ${response.status}`);
+
+        } catch (error) {
+            // This catches network errors or other issues with the fetch itself
+            console.error(`Fetch failed for a key:`, error);
+        }
+    }
+    // If the loop completes, all keys have failed
+    throw new Error('All API keys failed to fetch a response.');
+};
 
 
 /**
@@ -47,10 +90,6 @@ export const generateStoryContinuation = async (
     playerData?: PlayerData,
     action?: string
 ): Promise<string | null> => {
-    if (!API_KEY) {
-        Alert.alert("API Key Missing", "The Gemini API key is not configured. Please set EXPO_PUBLIC_GEMINI_API_KEY in your .env file.");
-        return null;
-    }
 
     const historyText = currentHistory.map(entry => entry.text).join('\n\n');
 
@@ -97,17 +136,9 @@ export const generateStoryContinuation = async (
                 },
             ]
         };
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
 
-        if (!response.ok) {
-            throw new Error(`API request failed with status ${response.status}`);
-        }
+        const result = await fetchWithKeyRotation(API_URL_BASE, payload);
 
-        const result = await response.json();
         const candidate = result.candidates?.[0];
 
         if (candidate?.content?.parts?.[0]?.text) {
@@ -137,10 +168,6 @@ export const generateStoryContinuation = async (
 
 // Function to generate an image from a text prompt
 export const generateImageFromPrompt = async (prompt: string): Promise<string | null> => {
-    if (!API_KEY) {
-        Alert.alert("API Key Missing", "The Gemini API key is not configured.");
-        return null;
-    }
     
     console.log("Generating image with prompt:", prompt);
     console.log("Using model: gemini-2.0-flash-preview-image-generation");
@@ -156,19 +183,7 @@ export const generateImageFromPrompt = async (prompt: string): Promise<string | 
             }
         };
 
-        const response = await fetch(IMAGE_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.json();
-            console.error("Image API Error Body:", errorBody);
-            throw new Error(`Image API request failed with status ${response.status}`);
-        }
-
-        const result = await response.json();
+        const result = await fetchWithKeyRotation(IMAGE_API_URL_BASE, payload);
         
         const candidate = result.candidates?.[0];
         // FIX: Explicitly typed the parameter 'p' as 'any' to resolve the implicit 'any' type error.
