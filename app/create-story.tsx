@@ -5,6 +5,8 @@ import {
     ActivityIndicator,
     Alert,
     Image,
+    KeyboardAvoidingView,
+    Platform,
     ScrollView,
     StyleSheet,
     Switch,
@@ -13,10 +15,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
-// NEW: Import storage functions
 import { databaseId, databases, ID, storiesCollectionId, uploadImageFile } from '../lib/appwrite';
-// NEW: Import image generation function
 import { generateImageFromPrompt } from '../lib/gemini';
 import { DEFAULT_AI_INSTRUCTIONS } from '../lib/quickstart';
 
@@ -84,9 +85,8 @@ export default function CreateStoryScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
-  // NEW: State for image generation
   const [imagePrompt, setImagePrompt] = useState('');
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null); // Base64 string
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   // State for Plot Tab
@@ -98,21 +98,19 @@ export default function CreateStoryScreen() {
   const [askAge, setAskAge] = useState(false);
   const [askGender, setAskGender] = useState(false);
 
-  // NEW: Handle image generation
   const handleGenerateImage = async () => {
     if (!imagePrompt) {
         Alert.alert("Prompt missing", "Please enter a prompt for the image.");
         return;
     }
     setIsGeneratingImage(true);
-    setGeneratedImage(null); // Clear previous image
+    setGeneratedImage(null);
     try {
         const base64 = await generateImageFromPrompt(imagePrompt);
         if (base64) {
             setGeneratedImage(base64);
         }
     } catch (error) {
-        // Alert is handled in the gemini.ts file
         console.error(error);
     } finally {
         setIsGeneratingImage(false);
@@ -134,7 +132,6 @@ export default function CreateStoryScreen() {
 
     try {
         let uploadedImageId: string | undefined = undefined;
-        // NEW: Upload image if it exists before creating the document
         if (generatedImage) {
             console.log("Uploading generated image...");
             const fileName = `${title.replace(/\s+/g, '_')}_${Date.now()}.png`;
@@ -142,8 +139,6 @@ export default function CreateStoryScreen() {
             console.log("Image uploaded with ID:", uploadedImageId);
         }
 
-        // FIX: Removed the explicit and complex type from this object.
-        // TypeScript will infer the type correctly, resolving the error.
         const storyData = {
             title,
             description,
@@ -182,99 +177,103 @@ export default function CreateStoryScreen() {
   };
 
   return (
-    <View style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isLoading}>
-                    <Feather name="chevron-left" size={28} color="#FFFFFF" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Create Your Story</Text>
-            </View>
+    <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isLoading}>
+                        <Feather name="chevron-left" size={28} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Create Your Story</Text>
+                </View>
 
-            <View style={styles.tabContainer}>
-                <TouchableOpacity
-                    style={[styles.tab, activeTab === 'Details' && styles.activeTab]}
-                    onPress={() => setActiveTab('Details')}>
-                    <Text style={styles.tabText}>Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.tab, activeTab === 'Plot' && styles.activeTab]}
-                    onPress={() => setActiveTab('Plot')}>
-                    <Text style={styles.tabText}>Plot</Text>
-                </TouchableOpacity>
-            </View>
+                <View style={styles.tabContainer}>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'Details' && styles.activeTab]}
+                        onPress={() => setActiveTab('Details')}>
+                        <Text style={styles.tabText}>Details</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.tab, activeTab === 'Plot' && styles.activeTab]}
+                        onPress={() => setActiveTab('Plot')}>
+                        <Text style={styles.tabText}>Plot</Text>
+                    </TouchableOpacity>
+                </View>
 
-            {activeTab === 'Details' ? (
-                <View style={styles.formContainer}>
-                    <FormInput label="Title" value={title} onChangeText={setTitle} placeholder="The Lost Amulet of Gorgon" />
-                    <FormInput label="Description" value={description} onChangeText={setDescription} placeholder="A short summary about your story's theme and setting." multiline height={120} />
-                    <FormInput label="Tags" value={tags} onChangeText={setTags} placeholder="fantasy, magic, adventure" />
-                    
-                    {/* --- NEW IMAGE GENERATION SECTION --- */}
-                    <View style={styles.imageGenContainer}>
-                        <Text style={styles.label}>Cover Image (Optional)</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={imagePrompt}
-                            onChangeText={setImagePrompt}
-                            placeholder="e.g., A mystical amulet glowing in a dark cave"
-                            placeholderTextColor="#666"
-                        />
-                        <TouchableOpacity 
-                            style={[styles.generateButton, (!imagePrompt || isGeneratingImage) && styles.disabledButton]} 
-                            onPress={handleGenerateImage}
-                            disabled={!imagePrompt || isGeneratingImage}
-                        >
-                            {isGeneratingImage ? (
-                                <ActivityIndicator color="#FFFFFF" />
-                            ) : (
-                                <Text style={styles.generateButtonText}>Generate Image</Text>
+                {activeTab === 'Details' ? (
+                    <View style={styles.formContainer}>
+                        <FormInput label="Title" value={title} onChangeText={setTitle} placeholder="The Lost Amulet of Gorgon" />
+                        <FormInput label="Description" value={description} onChangeText={setDescription} placeholder="A short summary about your story's theme and setting." multiline height={120} />
+                        <FormInput label="Tags" value={tags} onChangeText={setTags} placeholder="fantasy, magic, adventure" />
+                        
+                        <View style={styles.imageGenContainer}>
+                            <Text style={styles.label}>Cover Image (Optional)</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={imagePrompt}
+                                onChangeText={setImagePrompt}
+                                placeholder="e.g., A mystical amulet glowing in a dark cave"
+                                placeholderTextColor="#666"
+                            />
+                            <TouchableOpacity 
+                                style={[styles.generateButton, (!imagePrompt || isGeneratingImage) && styles.disabledButton]} 
+                                onPress={handleGenerateImage}
+                                disabled={!imagePrompt || isGeneratingImage}
+                            >
+                                {isGeneratingImage ? (
+                                    <ActivityIndicator color="#FFFFFF" />
+                                ) : (
+                                    <Text style={styles.generateButtonText}>Generate Image</Text>
+                                )}
+                            </TouchableOpacity>
+                            {generatedImage && (
+                                <View style={styles.imagePreviewContainer}>
+                                    <Image 
+                                        source={{ uri: `data:image/png;base64,${generatedImage}` }} 
+                                        style={styles.imagePreview}
+                                    />
+                                </View>
                             )}
-                        </TouchableOpacity>
-                        {generatedImage && (
-                            <View style={styles.imagePreviewContainer}>
-                                <Image 
-                                    source={{ uri: `data:image/png;base64,${generatedImage}` }} 
-                                    style={styles.imagePreview}
-                                />
-                            </View>
-                        )}
+                        </View>
+
                     </View>
-
-                </View>
-            ) : (
-                <View style={styles.formContainer}>
-                    <FormInput label="Opening" value={opening} onChangeText={setOpening} placeholder="You find yourself in a dimly lit tavern..." multiline height={120} />
-                    <FormInput
-                        label="AI Instructions"
-                        value={aiInstructions}
-                        onChangeText={setAiInstructions}
-                        placeholder="Generate responses in third-person. Avoid graphic violence."
-                        multiline
-                        height={120}
-                        showDefaultButton={true}
-                        onInsertDefault={() => setAiInstructions(DEFAULT_AI_INSTRUCTIONS)}
-                    />
-                    <FormInput label="Story Summary" value={storySummary} onChangeText={setStorySummary} placeholder="The main character is searching for a lost family heirloom." multiline height={120} />
-                    <FormInput label="Plot Essentials (Memory)" value={plotEssentials} onChangeText={setPlotEssentials} placeholder="The king is secretly a vampire. The amulet glows near undead." multiline height={120} />
-                    <ToggleSwitch label="Ask for User's Name" value={askName} onValueChange={setAskName} />
-                    <ToggleSwitch label="Ask for User's Age" value={askAge} onValueChange={setAskAge} />
-                    <ToggleSwitch label="Ask for User's Gender" value={askGender} onValueChange={setAskGender} />
-                </View>
-            )}
-
-            <TouchableOpacity style={styles.createButton} onPress={handleCreateStory} disabled={isLoading || isGeneratingImage}>
-                {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                    <>
-                        <Text style={styles.createButtonText}>Create</Text>
-                        <Feather name="arrow-right" size={20} color="#FFFFFF" style={{ marginLeft: 10 }} />
-                    </>
+                    <View style={styles.formContainer}>
+                        <FormInput label="Opening" value={opening} onChangeText={setOpening} placeholder="You find yourself in a dimly lit tavern..." multiline height={120} />
+                        <FormInput
+                            label="AI Instructions"
+                            value={aiInstructions}
+                            onChangeText={setAiInstructions}
+                            placeholder="Generate responses in third-person. Avoid graphic violence."
+                            multiline
+                            height={120}
+                            showDefaultButton={true}
+                            onInsertDefault={() => setAiInstructions(DEFAULT_AI_INSTRUCTIONS)}
+                        />
+                        <FormInput label="Story Summary" value={storySummary} onChangeText={setStorySummary} placeholder="The main character is searching for a lost family heirloom." multiline height={120} />
+                        <FormInput label="Plot Essentials (Memory)" value={plotEssentials} onChangeText={setPlotEssentials} placeholder="The king is secretly a vampire. The amulet glows near undead." multiline height={120} />
+                        <ToggleSwitch label="Ask for User's Name" value={askName} onValueChange={setAskName} />
+                        <ToggleSwitch label="Ask for User's Age" value={askAge} onValueChange={setAskAge} />
+                        <ToggleSwitch label="Ask for User's Gender" value={askGender} onValueChange={setAskGender} />
+                    </View>
                 )}
-            </TouchableOpacity>
-        </ScrollView>
-    </View>
+
+                <TouchableOpacity style={styles.createButton} onPress={handleCreateStory} disabled={isLoading || isGeneratingImage}>
+                    {isLoading ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                        <>
+                            <Text style={styles.createButtonText}>Create</Text>
+                            <Feather name="arrow-right" size={20} color="#FFFFFF" style={{ marginLeft: 10 }} />
+                        </>
+                    )}
+                </TouchableOpacity>
+            </ScrollView>
+        </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -282,7 +281,6 @@ const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
         backgroundColor: '#121212',
-        paddingTop: 40,
     },
     container: {
         paddingHorizontal: 20,
@@ -292,6 +290,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 20,
+        paddingTop: 20,
     },
     backButton: {
         marginRight: 15,
@@ -387,7 +386,6 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
     },
-    // NEW Styles for image generation
     imageGenContainer: {
         marginTop: 10,
         paddingTop: 20,
