@@ -34,26 +34,43 @@ type FormInputProps = {
   onInsertDefault?: () => void;
 };
 
-const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, placeholder, multiline = false, height = 40, showDefaultButton = false, onInsertDefault }) => (
-  <View style={styles.inputContainer}>
-    <View style={styles.labelContainer}>
-        <Text style={styles.label}>{label}</Text>
-        {showDefaultButton && (
-            <TouchableOpacity onPress={onInsertDefault} style={styles.defaultButton}>
-                <Text style={styles.defaultButtonText}>Insert Default</Text>
-            </TouchableOpacity>
-        )}
+// MODIFIED: FormInput component now automatically adjusts its height for multiline inputs.
+const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, placeholder, multiline = false, height = 40, showDefaultButton = false, onInsertDefault }) => {
+  const [inputHeight, setInputHeight] = useState(height);
+
+  return (
+    <View style={styles.inputContainer}>
+      <View style={styles.labelContainer}>
+          <Text style={styles.label}>{label}</Text>
+          {showDefaultButton && (
+              <TouchableOpacity onPress={onInsertDefault} style={styles.defaultButton}>
+                  <Text style={styles.defaultButtonText}>Insert Default</Text>
+              </TouchableOpacity>
+          )}
+      </View>
+      <TextInput
+        style={[
+            styles.input,
+            multiline && {
+                height: inputHeight,
+                textAlignVertical: 'top'
+            }
+        ]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#666"
+        multiline={multiline}
+        onContentSizeChange={(e) => {
+            if (multiline) {
+                // Set the height based on content, but not less than the initial height prop.
+                setInputHeight(Math.max(height, e.nativeEvent.contentSize.height));
+            }
+        }}
+      />
     </View>
-    <TextInput
-      style={[styles.input, multiline && { height, textAlignVertical: 'top' }]}
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      placeholderTextColor="#666"
-      multiline={multiline}
-    />
-  </View>
-);
+  );
+};
 
 type ToggleSwitchProps = {
     label: string;
