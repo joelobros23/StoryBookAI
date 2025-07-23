@@ -4,7 +4,8 @@ import * as FileSystem from 'expo-file-system';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+// MODIFIED: Import useSafeAreaInsets
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, deleteImageFile, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { deleteLocalCreation, deleteStorySession, disassociateImagePath, getLocalCreations, getStoryHistory, getStoryImagePaths } from '../../lib/history';
@@ -19,6 +20,8 @@ const PAGE_SIZE = 8;
 export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
+    // MODIFIED: Get insets to apply manual padding
+    const insets = useSafeAreaInsets();
     
     // --- State for Creations Tab ---
     const [creations, setCreations] = useState<StorySession[]>([]);
@@ -53,7 +56,6 @@ export default function ProfileScreen() {
         try {
             const cursor = refresh ? null : lastFetchedId;
             
-            // --- Fetch from Appwrite ---
             const appwriteQueries = [
                 Query.equal('userId', user!.$id), 
                 Query.orderDesc('$createdAt'), 
@@ -65,8 +67,6 @@ export default function ProfileScreen() {
             const appwriteResponse = await databases.listDocuments(databaseId, storiesCollectionId, appwriteQueries);
             const appwriteDocs = appwriteResponse.documents as StoryDocument[];
 
-            // --- Fetch ALL Local Creations (as they are few) ---
-            // We only fetch local stories once during a refresh, then merge with Appwrite results.
             const localDocs = refresh ? (await getLocalCreations()).filter(s => s.userId === user!.$id) : [];
 
             const allNewDocs = [...appwriteDocs, ...localDocs];
@@ -235,6 +235,8 @@ export default function ProfileScreen() {
                     ListFooterComponent={renderCreationsFooter}
                     onRefresh={handleRefreshCreations}
                     refreshing={isRefreshing}
+                    // MODIFIED: Add contentContainerStyle for bottom padding
+                    contentContainerStyle={{ paddingBottom: insets.bottom }}
                 />
             );
         }
@@ -246,7 +248,14 @@ export default function ProfileScreen() {
                     <TouchableOpacity onPress={() => setSortOrder('Recent')} style={[styles.sortButton, sortOrder === 'Recent' && styles.activeSortButton]}><Text style={styles.sortButtonText}>Recent</Text></TouchableOpacity>
                     <TouchableOpacity onPress={() => setSortOrder('Oldest')} style={[styles.sortButton, sortOrder === 'Oldest' && styles.activeSortButton]}><Text style={styles.sortButtonText}>Oldest</Text></TouchableOpacity>
                 </View>
-                <FlatList data={history} renderItem={renderHistoryItem} keyExtractor={(item) => item.sessionId} ListEmptyComponent={<Text style={styles.emptyListText}>Your story history is empty.</Text>} />
+                <FlatList 
+                    data={history} 
+                    renderItem={renderHistoryItem} 
+                    keyExtractor={(item) => item.sessionId} 
+                    ListEmptyComponent={<Text style={styles.emptyListText}>Your story history is empty.</Text>} 
+                    // MODIFIED: Add contentContainerStyle for bottom padding
+                    contentContainerStyle={{ paddingBottom: insets.bottom }}
+                />
             </>
         );
     };
@@ -268,7 +277,8 @@ export default function ProfileScreen() {
     );
 
     return (
-        <SafeAreaView style={styles.safeArea}>
+        // MODIFIED: Replaced SafeAreaView with a View and manual padding
+        <View style={[styles.safeArea, { paddingTop: insets.top }]}>
             <View style={styles.container}>
                 <View style={styles.header}>
                     <Feather name="user-check" size={80} color="#c792ea" />
@@ -295,7 +305,7 @@ export default function ProfileScreen() {
                     </View>
                 </Pressable>
             </Modal>
-        </SafeAreaView>
+        </View>
     );
 }
 
