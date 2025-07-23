@@ -4,7 +4,7 @@ import { Href } from 'expo-router';
 import { Alert } from 'react-native';
 import { PlayerData, StoryDocument } from '../app/types/story';
 import { ID } from './appwrite';
-import { generateImageFromPrompt } from './gemini';
+import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
 import { associateImagePath } from './history';
 
 // --- Constants ---
@@ -27,7 +27,6 @@ type GeneratedStoryDetails = {
 
 /**
  * Generates full story details from a user's title and description.
- * MODIFIED: Now accepts PlayerData to tailor the story to the character.
  */
 async function generateStoryFromUserInput(
     title: string,
@@ -104,20 +103,43 @@ async function generateStoryFromUserInput(
 
 /**
  * Generates an image prompt from the AI-generated story details.
+ * MODIFIED: Reverted to the original two-step AI process for generating a creative image prompt.
  */
-function generateImagePromptFromGeneratedStory(
+async function generateImagePromptFromGeneratedStory(
     details: GeneratedStoryDetails,
     title: string,
     playerData?: PlayerData
-): string {
-    let characterDescription = '';
+): Promise<string> {
+    let characterInfo = '';
     if (playerData && playerData.name && playerData.gender && playerData.age) {
-        characterDescription = `, a ${playerData.gender} character named ${playerData.name} aged ${playerData.age}`;
+        characterInfo = `
+The main character should be depicted according to these details:
+- Gender: ${playerData.gender}
+- Age: Approximately ${playerData.age} years old
+
+Ensure the character depicted in the image accurately reflects these details.`;
     }
-    
-    // MODIFIED: Removed the console.log from this function to prevent double logging.
-    const prompt = `${title}${characterDescription}, ${details.tags}, based on the description: "${details.description}", vibrant anime style, epic scene, cinematic lighting`;
-    return prompt;
+
+    const prompt = `You are a creative assistant. Based on the following story details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
+
+Story Title: ${title}
+Tags: ${details.tags}
+Description: ${details.description}
+${characterInfo}`;
+
+    try {
+        const imagePrompt = await generateStoryContinuation(
+            {} as StoryDocument,
+            [],
+            { temperature: 0.7, topP: 1.0, maxOutputTokens: 100 },
+            undefined,
+            prompt
+        );
+        return imagePrompt || `${title}, ${details.tags}, vibrant anime style, epic scene, cinematic lighting`;
+    } catch (error) {
+        console.error("Failed to generate image prompt, using fallback:", error);
+        return `${title}, ${details.tags}, vibrant anime style, epic scene, cinematic lighting`;
+    }
 }
 
 
@@ -137,7 +159,6 @@ export async function handleSimplifiedCreation(
         return;
     }
 
-    // MODIFIED: Pass the playerData to the story generation function.
     const storyDetails = await generateStoryFromUserInput(title, userDescription, isMainCharacter, playerData);
 
     if (!storyDetails) {
@@ -149,7 +170,7 @@ export async function handleSimplifiedCreation(
     let base64Image: string | null = null;
     
     try {
-        const imagePrompt = generateImagePromptFromGeneratedStory(storyDetails, title, playerData);
+        const imagePrompt = await generateImagePromptFromGeneratedStory(storyDetails, title, playerData);
         base64Image = await generateImageFromPrompt(imagePrompt);
 
         if (base64Image) {

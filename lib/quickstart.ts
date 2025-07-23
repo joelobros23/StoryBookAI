@@ -1,11 +1,10 @@
 import { Models } from 'appwrite';
+import * as FileSystem from 'expo-file-system';
 import { Href } from 'expo-router';
 import { Alert } from 'react-native';
 import { PlayerData, StoryDocument } from '../app/types/story';
 import { ID } from './appwrite';
-// MODIFIED: Removed generateStoryContinuation as it's no longer needed
-import * as FileSystem from 'expo-file-system';
-import { generateImageFromPrompt } from './gemini';
+import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
 import { associateImagePath } from './history';
 
 // --- Constants ---
@@ -80,13 +79,35 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
 
 /**
  * Generates a high-quality, concise image prompt from story details.
- * MODIFIED: This function now directly constructs the prompt in a single step.
+ * MODIFIED: Reverted to the original two-step AI process.
  */
-function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string, playerData: PlayerData): string {
-    const characterDescription = `${playerData.gender} character aged ${playerData.age}`;
-    const prompt = `${details.title}, ${characterDescription}, based on the description: "${details.description}", ${genre}, vibrant anime style, epic scene, cinematic lighting`;
-    console.log("Generating image with prompt:", prompt); // For debugging
-    return prompt;
+async function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string, playerData: PlayerData): Promise<string> {
+    const prompt = `You are a creative assistant. Based on the following story and character details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
+
+Story Title: ${details.title}
+Genre: ${genre}
+Description: ${details.description}
+
+Character Details:
+- Name: ${playerData.name}
+- Gender: ${playerData.gender}
+- Age: ${playerData.age}
+
+Ensure the character depicted in the image accurately reflects these details, especially their age.`;
+
+    try {
+        const imagePrompt = await generateStoryContinuation(
+            {} as StoryDocument,
+            [],
+            { temperature: 0.7, topP: 1.0, maxOutputTokens: 100 },
+            undefined,
+            prompt
+        );
+        return imagePrompt || `${details.title}, ${genre}, vibrant anime style, ${playerData.gender} character aged ${playerData.age}, epic scene, cinematic lighting`;
+    } catch (error) {
+        console.error("Failed to generate image prompt, using fallback:", error);
+        return `${details.title}, ${genre}, vibrant anime style, ${playerData.gender} character aged ${playerData.age}, epic scene, cinematic lighting`;
+    }
 }
 
 
@@ -116,8 +137,7 @@ export async function handleQuickStart(
     let base64Image: string | null = null;
 
     try {
-        // MODIFIED: This now uses the simplified, single-step prompt generation.
-        const imagePrompt = generateImagePromptFromStory(storyDetails, genre, playerData);
+        const imagePrompt = await generateImagePromptFromStory(storyDetails, genre, playerData);
         base64Image = await generateImageFromPrompt(imagePrompt);
 
         if (base64Image) {
