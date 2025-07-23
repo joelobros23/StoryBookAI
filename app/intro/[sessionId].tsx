@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -16,15 +17,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { getImageUrl } from '../../lib/appwrite';
-import { createNewSession, getStoryImagePaths, getStorySession, saveSessionPlayerData } from '../../lib/history';
+import { getImageUrl, ID } from '../../lib/appwrite';
+import { associateImagePath, createNewSession, getStoryImagePaths, getStorySession, saveSessionPlayerData } from '../../lib/history';
 import { PlayerData, StoryDocument, StorySession } from '../types/story';
 
 type IntroStep = 'name' | 'gender' | 'age';
 type ViewMode = 'details' | 'questions';
 
 export default function IntroScreen() {
-    // MODIFIED: Added playerDataString to capture pre-filled character data
     const { sessionId, story: storyString, playerData: playerDataString } = useLocalSearchParams<{ sessionId: string; story?: string, playerData?: string }>();
     const router = useRouter();
     const { user } = useAuth();
@@ -45,25 +45,47 @@ export default function IntroScreen() {
                 return;
             }
             const parsedStory = JSON.parse(storyString) as StoryDocument;
+
+            // MODIFIED: This block now handles saving a new base64 image immediately upon load.
+            let imagePathToUse: string | undefined;
+            const imagePaths = await getStoryImagePaths();
+            const existingImagePath = imagePaths[parsedStory.$id];
+
+            if (existingImagePath) {
+                imagePathToUse = existingImagePath;
+            } else if (parsedStory.localCoverImageBase64) {
+                // If base64 data exists but no path is saved, save the image now.
+                try {
+                    const newFileName = `${ID.unique()}.png`;
+                    const newLocalUri = FileSystem.documentDirectory + newFileName;
+                    await FileSystem.writeAsStringAsync(newLocalUri, parsedStory.localCoverImageBase64, {
+                        encoding: FileSystem.EncodingType.Base64,
+                    });
+                    await associateImagePath(parsedStory.$id, newLocalUri);
+                    imagePathToUse = newLocalUri;
+                    // Clean up the base64 data so it's not held in memory
+                    delete parsedStory.localCoverImageBase64;
+                } catch (e) {
+                    console.error("Failed to save base64 image on intro screen:", e);
+                }
+            }
+            
             setStory(parsedStory);
 
-            // MODIFIED: If player data is passed via params (from quick start), set it in state.
             if (playerDataString) {
                 setPlayerData(JSON.parse(playerDataString));
             }
 
-            const imagePaths = await getStoryImagePaths();
-            const reliableImagePath = imagePaths[parsedStory.$id];
             const storySession = await getStorySession(sessionId);
 
             if (storySession) {
-                storySession.localCoverImagePath = reliableImagePath || storySession.localCoverImagePath;
+                storySession.localCoverImagePath = imagePathToUse || storySession.localCoverImagePath;
                 setSession(storySession);
             } else {
                 setSession({
                     story: parsedStory,
                     sessionId: parsedStory.$id,
-                    localCoverImagePath: reliableImagePath,
+                    localCoverImagePath: imagePathToUse,
                     content: [],
                     sessionDate: new Date().toISOString(),
                     playerData: {},
@@ -103,7 +125,6 @@ export default function IntroScreen() {
         setIsLoading(true);
 
         try {
-            // Combine pre-filled data (from quick start) with any data collected on this screen
             const combinedPlayerData = { ...playerData, ...finalPlayerData };
 
             const newSession = await createNewSession(story);
