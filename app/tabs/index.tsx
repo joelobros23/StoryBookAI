@@ -3,7 +3,6 @@ import { Query } from 'appwrite';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
-// MODIFIED: Import useSafeAreaInsets to manually control padding
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
@@ -89,7 +88,6 @@ const PAGE_SIZE = 6;
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  // MODIFIED: Get insets to apply manual padding
   const insets = useSafeAreaInsets();
 
   // --- State for Pagination ---
@@ -98,54 +96,89 @@ export default function HomeScreen() {
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [lastFetchedId, setLastFetchedId] = useState<string | null>(null);
+  // MODIFIED: State for random pagination
+  const [shuffledIds, setShuffledIds] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(0);
 
   // --- State for Modals and Actions ---
   const [playModalVisible, setPlayModalVisible] = useState(false);
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  const fetchStories = async (refresh = false) => {
-    if (isFetchingMore) return;
-    if (!refresh && !hasMore) return;
+  // --- New function to fetch a specific page of stories from a list of IDs ---
+  const fetchPageByIds = async (page: number, ids: string[]) => {
+    const idSlice = ids.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-    setIsFetchingMore(true);
-    if (refresh) {
-        setIsRefreshing(true);
+    if (idSlice.length === 0) {
+        setHasMore(false);
+        return;
     }
 
     try {
-        const cursor = refresh ? null : lastFetchedId;
-        const queries = [
-            Query.orderDesc('$createdAt'),
-            Query.limit(PAGE_SIZE)
-        ];
-        if (cursor) {
-            queries.push(Query.cursorAfter(cursor));
-        }
-
-        const response = await databases.listDocuments(databaseId, storiesCollectionId, queries);
+        const response = await databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('$id', idSlice)]);
         const newDocs = response.documents as StoryDocument[];
 
-        if (newDocs.length === 0) {
+        // Re-order the fetched documents to match the shuffled ID order
+        const orderedDocs = idSlice.map(id => newDocs.find(doc => doc.$id === id)).filter(Boolean) as StoryDocument[];
+
+        // FIX: Ensure no duplicate stories are added to the state
+        setStories(prev => {
+            const existingIds = new Set(prev.map(s => s.$id));
+            const uniqueNewDocs = orderedDocs.filter(doc => !existingIds.has(doc.$id));
+            return [...prev, ...uniqueNewDocs];
+        });
+
+        if (idSlice.length < PAGE_SIZE) {
             setHasMore(false);
-        } else {
-            setStories(prev => refresh ? newDocs : [...prev, ...newDocs]);
-            setLastFetchedId(newDocs[newDocs.length - 1].$id);
-            if (newDocs.length < PAGE_SIZE) {
-                setHasMore(false);
-            }
         }
     } catch (error: any) {
-        if (error.code !== 401) {
-            console.error("Failed to fetch stories:", error);
-            Alert.alert("Error", "Could not fetch stories.");
-        }
-    } finally {
-        setIsFetchingMore(false);
-        setIsInitialLoading(false);
-        setIsRefreshing(false);
+        console.error("Failed to fetch page by IDs:", error);
+        Alert.alert("Error", "Could not fetch stories.");
     }
+  };
+  
+  // --- Modified fetch function to handle random sorting ---
+  const fetchStories = async (refresh = false) => {
+    if (isFetchingMore || (!refresh && !hasMore)) return;
+
+    setIsFetchingMore(true);
+
+    if (refresh) {
+        setIsRefreshing(true);
+        try {
+            // On refresh, get all story IDs, shuffle them, then fetch the first page
+            const idResponse = await databases.listDocuments(databaseId, storiesCollectionId, [Query.limit(5000), Query.select(['$id'])]);
+            const ids = idResponse.documents.map(doc => doc.$id);
+
+            // Fisher-Yates shuffle algorithm
+            for (let i = ids.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [ids[i], ids[j]] = [ids[j], ids[i]];
+            }
+
+            setShuffledIds(ids);
+            setCurrentPage(0);
+            setHasMore(true);
+            setStories([]); // Clear existing stories
+            
+            await fetchPageByIds(0, ids);
+
+        } catch (error: any) {
+             if (error.code !== 401) {
+                console.error("Failed to fetch story IDs:", error);
+                Alert.alert("Error", "Could not fetch stories.");
+            }
+        } finally {
+            setIsRefreshing(false);
+            setIsInitialLoading(false);
+        }
+    } else {
+        // On scroll, fetch the next page from the existing shuffled list
+        const nextPage = currentPage + 1;
+        await fetchPageByIds(nextPage, shuffledIds);
+        setCurrentPage(nextPage);
+    }
+    setIsFetchingMore(false);
   };
 
   useFocusEffect(
@@ -155,9 +188,6 @@ export default function HomeScreen() {
   );
 
   const handleRefresh = () => {
-    setStories([]);
-    setLastFetchedId(null);
-    setHasMore(true);
     fetchStories(true);
   };
 
@@ -234,7 +264,6 @@ export default function HomeScreen() {
   };
 
   return (
-    // MODIFIED: Replaced SafeAreaView with a standard View
     <View style={styles.container}>
       {isInitialLoading ? (
          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#c792ea" /></View>
@@ -250,11 +279,10 @@ export default function HomeScreen() {
             onEndReachedThreshold={0.5}
             onRefresh={handleRefresh}
             refreshing={isRefreshing}
-            // MODIFIED: Use the insets to apply dynamic padding
             contentContainerStyle={{
                 paddingHorizontal: 20,
                 paddingTop: insets.top,
-                paddingBottom: insets.bottom + 50, // Add extra space below the last item
+                paddingBottom: insets.bottom + 50,
             }}
         />
       )}
