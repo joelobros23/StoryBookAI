@@ -35,28 +35,41 @@ type FormInputProps = {
   editable?: boolean;
   keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
 };
-const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, placeholder, multiline = false, height = 40, showDefaultButton = false, onInsertDefault, editable = true, keyboardType = 'default' }) => (
-  <View style={styles.inputContainer}>
-    <View style={styles.labelContainer}>
-        <Text style={styles.label}>{label}</Text>
-        {showDefaultButton && (
-            <TouchableOpacity onPress={onInsertDefault} style={styles.defaultButton}>
-                <Text style={styles.defaultButtonText}>Insert Default</Text>
-            </TouchableOpacity>
-        )}
-    </View>
-    <TextInput
-      style={[styles.input, multiline && { height, textAlignVertical: 'top' }]}
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      placeholderTextColor="#666"
-      multiline={multiline}
-      editable={editable}
-      keyboardType={keyboardType}
-    />
-  </View>
-);
+
+// MODIFIED: This component now uses a simpler and more reliable method to auto-expand.
+const FormInput: React.FC<FormInputProps> = ({ label, value, onChangeText, placeholder, multiline = false, height = 40, showDefaultButton = false, onInsertDefault, editable = true, keyboardType = 'default' }) => {
+    // The state and refs for height calculation are no longer needed.
+    // The TextInput will now auto-size based on its content when multiline is true.
+
+    return (
+        <View style={styles.inputContainer}>
+            <View style={styles.labelContainer}>
+                <Text style={styles.label}>{label}</Text>
+                {showDefaultButton && (
+                    <TouchableOpacity onPress={onInsertDefault} style={styles.defaultButton}>
+                        <Text style={styles.defaultButtonText}>Insert Default</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+            <TextInput
+              style={[
+                  styles.input,
+                  // When multiline, we don't set a fixed height. Instead, we set a minHeight
+                  // to ensure it looks right when empty, and let it grow from there.
+                  multiline ? { minHeight: height, textAlignVertical: 'top' } : { height: height }
+              ]}
+              value={value}
+              onChangeText={onChangeText}
+              placeholder={placeholder}
+              placeholderTextColor="#666"
+              multiline={multiline}
+              editable={editable}
+              keyboardType={keyboardType}
+            />
+        </View>
+    );
+};
+
 
 type ToggleSwitchProps = {
     label: string;
@@ -108,7 +121,7 @@ export default function EditStoryScreen() {
   const [storySummary, setStorySummary] = useState(initialStory?.story_summary || '');
   const [plotEssentials, setPlotEssentials] = useState(initialStory?.plot_essentials || '');
 
-  // NEW: AI Generation Config State
+  // AI Generation Config State
   const [temperature, setTemperature] = useState('0.8');
   const [topP, setTopP] = useState('0.9');
 
@@ -122,7 +135,6 @@ export default function EditStoryScreen() {
           setPlayerAge(session.playerData?.age || '');
           setPlayerGender(session.playerData?.gender || '');
           setLocalImagePath(session.localCoverImagePath || null);
-          // NEW: Load generation config from the session
           if (session.generationConfig) {
             setTemperature(String(session.generationConfig.temperature));
             setTopP(String(session.generationConfig.topP));
@@ -159,7 +171,6 @@ export default function EditStoryScreen() {
     setIsLoading(true);
 
     try {
-      // --- Handle Image Update ---
       if (newGeneratedImage) {
         if (localImagePath) {
           await FileSystem.deleteAsync(localImagePath, { idempotent: true });
@@ -172,7 +183,6 @@ export default function EditStoryScreen() {
         await updateSessionCoverImage(sessionId, newLocalUri);
       }
 
-      // --- Handle Story, Player, and AI Config Data Update ---
       const updatedStory: StoryDocument = {
         ...initialStory,
         title,
@@ -187,11 +197,10 @@ export default function EditStoryScreen() {
       };
       const updatedPlayerData: PlayerData = { name: playerName, age: playerAge, gender: playerGender };
       
-      // NEW: Construct and save the updated generation config
       const updatedGenerationConfig: GenerationConfig = {
           temperature: parseFloat(temperature) || 0.8,
           topP: parseFloat(topP) || 0.9,
-          maxOutputTokens: 200, // This remains constant for now
+          maxOutputTokens: 200,
       };
 
       await updateStoryInSession(sessionId, updatedStory);
@@ -285,7 +294,6 @@ export default function EditStoryScreen() {
             <FormInput label="Story Summary" value={storySummary} onChangeText={setStorySummary} placeholder="Main story summary" multiline height={100} />
             <FormInput label="Plot Essentials" value={plotEssentials} onChangeText={setPlotEssentials} placeholder="Key plot points" multiline height={100} />
           
-            {/* NEW: AI Settings Section */}
             <Text style={styles.sectionTitle}>AI Settings</Text>
             <FormInput 
                 label="Temperature (Creativity)" 
