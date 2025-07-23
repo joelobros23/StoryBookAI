@@ -55,31 +55,50 @@ export const updateStoryInSession = async (sessionId: string, updatedStory: Stor
 };
 
 /**
- * Creates a new, unique session for a story and saves it.
- * @param story - The base story document.
- * @returns The newly created session.
+ * Creates a new, unique session for a story and saves it to local storage.
+ * MODIFIED: This function now preserves the existing image path when creating a new session for the same story.
  */
 export const createNewSession = async (story: StoryDocument): Promise<StorySession> => {
     const history = await getStoryHistory();
-    
-    let localCoverImagePath: string | null = null;
-    if (story.cover_image_id) {
-        localCoverImagePath = await downloadAndSaveImage(story.cover_image_id);
+    const storyToSave = { ...story };
+
+    // Find if an older session for this story exists to reuse its image path.
+    const existingSession = history.find(s => s.story.$id === story.$id);
+    let localCoverImagePath: string | null = existingSession?.localCoverImagePath || null;
+
+    // Only download or save a new image if one doesn't already exist locally.
+    if (!localCoverImagePath) {
+        if (storyToSave.localCoverImageBase64) {
+            try {
+                const newFileName = `${ID.unique()}.png`;
+                const newLocalUri = FileSystem.documentDirectory + newFileName;
+                await FileSystem.writeAsStringAsync(newLocalUri, storyToSave.localCoverImageBase64, {
+                    encoding: FileSystem.EncodingType.Base64,
+                });
+                localCoverImagePath = newLocalUri;
+                delete storyToSave.localCoverImageBase64; 
+            } catch (e) {
+                console.error("Failed to save local base64 image:", e);
+            }
+        } 
+        else if (storyToSave.cover_image_id) {
+            localCoverImagePath = await downloadAndSaveImage(storyToSave.cover_image_id);
+        }
     }
 
     const newSession: StorySession = {
-        story: story,
+        story: storyToSave,
         content: [],
         sessionId: ID.unique(),
         sessionDate: new Date().toISOString(),
         playerData: {},
         localCoverImagePath: localCoverImagePath || undefined,
-        // NEW: Add default generation config to each new session
         generationConfig: {
             temperature: 0.8,
             topP: 0.9,
             maxOutputTokens: 200,
         },
+        isLocal: storyToSave.isLocal,
     };
     const updatedHistory = [newSession, ...history];
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
@@ -123,7 +142,7 @@ export const saveSessionPlayerData = async (sessionId: string, playerData: Playe
 };
 
 /**
- * NEW: Saves the generation config for a specific story session.
+ * Saves the generation config for a specific story session.
  */
 export const updateSessionGenerationConfig = async (sessionId: string, config: GenerationConfig) => {
     try {

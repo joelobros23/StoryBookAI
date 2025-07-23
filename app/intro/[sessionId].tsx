@@ -15,10 +15,10 @@ import {
     View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-// FIX: Import the 'users' service to correctly fetch creator profiles
-import { account, getImageUrl } from '../../lib/appwrite';
-import { createNewSession, saveSessionPlayerData } from '../../lib/history';
-import { PlayerData, StoryDocument } from '../types/story';
+import { useAuth } from '../../context/AuthContext';
+import { getImageUrl } from '../../lib/appwrite';
+import { createNewSession, getStoryHistory, getStorySession, saveSessionPlayerData } from '../../lib/history';
+import { PlayerData, StoryDocument, StorySession } from '../types/story';
 
 type IntroStep = 'name' | 'gender' | 'age';
 type ViewMode = 'details' | 'questions';
@@ -26,8 +26,10 @@ type ViewMode = 'details' | 'questions';
 export default function IntroScreen() {
     const { sessionId, story: storyString } = useLocalSearchParams<{ sessionId: string; story?: string }>();
     const router = useRouter();
+    const { user } = useAuth();
 
     const [story, setStory] = useState<StoryDocument | null>(null);
+    const [session, setSession] = useState<StorySession | null>(null);
     const [steps, setSteps] = useState<IntroStep[]>([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [playerData, setPlayerData] = useState<PlayerData>({});
@@ -36,35 +38,41 @@ export default function IntroScreen() {
     const [creatorName, setCreatorName] = useState('');
 
     useEffect(() => {
-        if (!storyString || !sessionId) {
-            Alert.alert("Error", "Story data is missing.", [{ text: "OK", onPress: () => router.back() }]);
-            return;
-        }
-        const parsedStory = JSON.parse(storyString) as StoryDocument;
-        setStory(parsedStory);
-
-        // FIX: Adopted the correct logic from index.tsx to fetch the creator's name
-        const fetchCreator = async () => {
-            if (parsedStory.userId) {
-                try {
-                    // Use the 'account' service to get a user by their ID
-                    const creator = await account.get();
-                    setCreatorName(creator.name);
-                } catch (error) {
-                    console.error("Failed to fetch creator name:", error);
-                    setCreatorName('Unknown');
-                }
+        const loadStoryData = async () => {
+            if (!storyString || !sessionId) {
+                Alert.alert("Error", "Story data is missing.", [{ text: "OK", onPress: () => router.back() }]);
+                return;
             }
-        };
-        fetchCreator();
+            const parsedStory = JSON.parse(storyString) as StoryDocument;
+            setStory(parsedStory);
 
-        const requiredSteps: IntroStep[] = [];
-        if (parsedStory.ask_user_name) requiredSteps.push('name');
-        if (parsedStory.ask_user_gender) requiredSteps.push('gender');
-        if (parsedStory.ask_user_age) requiredSteps.push('age');
-        
-        setSteps(requiredSteps);
-    }, [storyString, sessionId, router]);
+            // MODIFIED: This logic now correctly finds the session and its associated image.
+            // First, try to find a session by the passed sessionId. This handles "continue from history".
+            let storySession = await getStorySession(sessionId);
+            
+            // If no session is found, it might be a "start new from creation" case.
+            // In this scenario, find *any* existing session for this story to get the image path.
+            if (!storySession) {
+                const allHistory = await getStoryHistory();
+                storySession = allHistory.find(s => s.story.$id === parsedStory.$id) || null;
+            }
+            setSession(storySession);
+
+            if (parsedStory.userId === user?.$id) {
+                setCreatorName(user.name);
+            } else {
+                setCreatorName('A Storyteller');
+            }
+
+            const requiredSteps: IntroStep[] = [];
+            if (parsedStory.ask_user_name) requiredSteps.push('name');
+            if (parsedStory.ask_user_gender) requiredSteps.push('gender');
+            if (parsedStory.ask_user_age) requiredSteps.push('age');
+            
+            setSteps(requiredSteps);
+        };
+        loadStoryData();
+    }, [storyString, sessionId, router, user]);
 
     const handleNextStep = (data: Partial<PlayerData>) => {
         const newPlayerData = { ...playerData, ...data };
@@ -126,12 +134,22 @@ export default function IntroScreen() {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {story ? (
                     <>
-                        {story.cover_image_id && (
+                        {session?.localCoverImagePath ? (
+                            <Image
+                                source={{ uri: session.localCoverImagePath }}
+                                style={styles.coverImage}
+                                resizeMode="cover"
+                            />
+                        ) : story.cover_image_id ? (
                             <Image
                                 source={{ uri: getImageUrl(story.cover_image_id) }}
                                 style={styles.coverImage}
                                 resizeMode="cover"
                             />
+                        ) : (
+                            <View style={[styles.coverImage, styles.placeholderImage]} >
+                                <Feather name="image" size={50} color="#444" />
+                            </View>
                         )}
                         <Text style={styles.storyTitle}>{story.title}</Text>
                         <Text style={styles.storyDescription}>{story.description || 'No description provided.'}</Text>
@@ -253,6 +271,10 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         marginBottom: 20,
         backgroundColor: '#1e1e1e',
+    },
+    placeholderImage: {
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     storyTitle: {
         color: '#FFFFFF',

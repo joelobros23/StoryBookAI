@@ -2,8 +2,9 @@ import { Models } from 'appwrite';
 import { Href } from 'expo-router';
 import { Alert } from 'react-native';
 import { StoryDocument } from '../app/types/story';
-import { databaseId, databases, ID, storiesCollectionId, uploadImageFile } from './appwrite';
+import { ID } from './appwrite';
 import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
+import { createNewSession } from './history';
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -89,7 +90,7 @@ Description: ${details.description}`;
 
 /**
  * The main handler for the quick start process.
- * This function is now robust to handle different call signatures.
+ * MODIFIED: This function now creates a local-only story session.
  */
 export async function handleQuickStart(
     genre: string, 
@@ -125,25 +126,16 @@ export async function handleQuickStart(
         return;
     }
 
-    let uploadedImageId: string | undefined = undefined;
+    let base64Image: string | null = null;
     try {
-        console.log("Generating enhanced image prompt...");
         const imagePrompt = await generateImagePromptFromStory(storyDetails, genre);
-        
-        console.log("Generating cover image with prompt:", imagePrompt);
-        const base64Image = await generateImageFromPrompt(imagePrompt);
-
-        if (base64Image) {
-            console.log("Uploading generated image...");
-            const fileName = `${storyDetails.title.replace(/\s+/g, '_')}_${Date.now()}.png`;
-            uploadedImageId = await uploadImageFile(base64Image, fileName);
-            console.log("Image uploaded with ID:", uploadedImageId);
-        }
+        base64Image = await generateImageFromPrompt(imagePrompt);
     } catch (error) {
-        console.error("Quick Start image generation/upload failed, proceeding without image:", error);
+        console.error("Quick Start image generation failed, proceeding without image:", error);
     }
 
-    const storyData: Omit<StoryDocument, keyof Models.Document> = {
+    // MODIFIED: Construct a local StoryDocument object instead of saving to a database.
+    const storyData: StoryDocument = {
         ...storyDetails,
         tags: tag,
         ai_instruction: DEFAULT_AI_INSTRUCTIONS,
@@ -151,25 +143,23 @@ export async function handleQuickStart(
         ask_user_age: false,
         ask_user_gender: false,
         userId: user.$id,
-        cover_image_id: uploadedImageId,
+        $id: ID.unique(), // Generate a unique local ID
+        $createdAt: new Date().toISOString(),
+        isLocal: true, // Flag this as a local-only story
+        localCoverImageBase64: base64Image || undefined,
     };
 
     try {
-        const newStoryDocument = await databases.createDocument(
-            databaseId,
-            storiesCollectionId,
-            ID.unique(),
-            storyData
-        );
-
-        // MODIFIED: Removed createNewSession and now passing the new document ID directly.
+        // MODIFIED: Create a new session in local storage directly.
+        const newSession = await createNewSession(storyData);
+        
         router.push({
             pathname: '/intro/[sessionId]',
-            params: { sessionId: newStoryDocument.$id, story: JSON.stringify(newStoryDocument) }
+            params: { sessionId: newSession.sessionId, story: JSON.stringify(newSession.story) }
         });
 
     } catch (error: any) {
-        console.error("Failed to save quick start story:", error);
+        console.error("Failed to save quick start story locally:", error);
         Alert.alert("Error", "Could not save the new story.");
     }
 }
