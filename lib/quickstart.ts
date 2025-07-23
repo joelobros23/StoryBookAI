@@ -1,10 +1,11 @@
 import { Models } from 'appwrite';
 import { Href } from 'expo-router';
 import { Alert } from 'react-native';
-import { StoryDocument } from '../app/types/story';
+import { PlayerData, StoryDocument } from '../app/types/story';
 import { ID } from './appwrite';
 import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
-import { createNewSession } from './history';
+// MODIFIED: Added 'saveSessionPlayerData' to the import
+import { createNewSession, saveSessionPlayerData } from './history';
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -25,9 +26,9 @@ type GeneratedStoryDetails = {
 };
 
 /**
- * Generates story details from the Gemini API based on a genre.
+ * Generates story details from the Gemini API based on a genre and player data.
  */
-async function generateStoryDetailsFromGenre(genre: string): Promise<GeneratedStoryDetails | null> {
+async function generateStoryDetails(genre: string, playerData: PlayerData): Promise<GeneratedStoryDetails | null> {
     const schema = {
         type: "OBJECT",
         properties: {
@@ -39,7 +40,15 @@ async function generateStoryDetailsFromGenre(genre: string): Promise<GeneratedSt
         },
         required: ["title", "description", "opening", "story_summary", "plot_essentials"]
     };
-    const prompt = `Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. Provide a title, a short description, an exciting opening scene for the player, a brief summary of the overall story, and 2-3 essential plot points for the AI to remember. Respond with only a valid JSON object that conforms to the following schema: ${JSON.stringify(schema)}`;
+    const prompt = `Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. The story must be tailored for the following player character:
+    - Name: ${playerData.name}
+    - Gender: ${playerData.gender}
+    - Age: ${playerData.age}
+
+    Provide a title, a short description, an exciting opening scene for the player, a brief summary of the overall story, and 2-3 essential plot points for the AI to remember. The story should revolve around the player's character.
+    
+    Respond with only a valid JSON object that conforms to the following schema: ${JSON.stringify(schema)}`;
+
     try {
         const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
         const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
@@ -94,6 +103,7 @@ Description: ${details.description}`;
 export async function handleQuickStart(
     genre: string, 
     tag: string, 
+    playerData: PlayerData,
     user: Models.User<Models.Preferences>, 
     router: { push: (href: Href) => void; }
 ) {
@@ -102,7 +112,7 @@ export async function handleQuickStart(
         return;
     }
 
-    const storyDetails = await generateStoryDetailsFromGenre(genre);
+    const storyDetails = await generateStoryDetails(genre, playerData);
 
     if (!storyDetails) {
         Alert.alert("Generation Failed", "The AI could not create a story. Please try again.");
@@ -117,16 +127,13 @@ export async function handleQuickStart(
         console.error("Quick Start image generation failed, proceeding without image:", error);
     }
 
-    // MODIFIED: Set character questions based on genre
-    const isRomance = genre === 'Romance';
-
     const storyData: StoryDocument = {
         ...storyDetails,
         tags: tag,
         ai_instruction: DEFAULT_AI_INSTRUCTIONS,
-        ask_user_name: isRomance,
-        ask_user_age: isRomance,
-        ask_user_gender: isRomance,
+        ask_user_name: false, // Player data is now collected beforehand
+        ask_user_age: false,
+        ask_user_gender: false,
         userId: user.$id,
         $id: ID.unique(),
         $createdAt: new Date().toISOString(),
@@ -136,6 +143,8 @@ export async function handleQuickStart(
 
     try {
         const newSession = await createNewSession(storyData);
+        // Save the player data collected before generation
+        await saveSessionPlayerData(newSession.sessionId, playerData);
         
         router.push({
             pathname: '/intro/[sessionId]',

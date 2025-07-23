@@ -1,12 +1,12 @@
 import { Feather } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { handleQuickStart } from '../../lib/quickstart';
+import { PlayerData } from '../types/story';
 
 // --- Genre Selection Modal ---
-// MODIFIED: Added "Romance" to the genre list
 const GENRES = ["Adventure", "Horror", "Modern Day Drama", "Medieval Drama", "Action", "Sci-fi", "Fairy Tale", "Romance"];
 
 type QuickStartModalProps = {
@@ -38,6 +38,82 @@ const QuickStartModal = ({ visible, onClose, onSelectGenre }: QuickStartModalPro
         </TouchableWithoutFeedback>
     </Modal>
 );
+
+// --- NEW: Character Creation Modal ---
+type CharacterCreationModalProps = {
+    visible: boolean;
+    onClose: () => void;
+    onComplete: (playerData: PlayerData) => void;
+};
+
+const CharacterCreationModal = ({ visible, onClose, onComplete }: CharacterCreationModalProps) => {
+    const [step, setStep] = useState(0);
+    const [playerData, setPlayerData] = useState<PlayerData>({});
+
+    const handleNext = (data: Partial<PlayerData>) => {
+        const newPlayerData = { ...playerData, ...data };
+        setPlayerData(newPlayerData);
+        if (step < 2) {
+            setStep(step + 1);
+        } else {
+            onComplete(newPlayerData);
+        }
+    };
+
+    const reset = () => {
+        setStep(0);
+        setPlayerData({});
+        onClose();
+    };
+
+    return (
+        <Modal animationType="slide" transparent={true} visible={visible} onRequestClose={reset}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { paddingBottom: 30 }]}>
+                        {step === 0 && <NameStep onComplete={(name) => handleNext({ name })} />}
+                        {step === 1 && <GenderStep onComplete={(gender) => handleNext({ gender })} />}
+                        {step === 2 && <AgeStep onComplete={(age) => handleNext({ age })} />}
+                    </View>
+                </View>
+            </KeyboardAvoidingView>
+        </Modal>
+    );
+};
+
+// --- Step Components (for the new modal) ---
+const NameStep = ({ onComplete }: { onComplete: (name: string) => void }) => {
+    const [name, setName] = useState('');
+    return (
+        <View style={styles.stepContainer}>
+            <Text style={styles.modalTitle}>Character's Name?</Text>
+            <TextInput style={styles.input} placeholder="e.g., Alistair" placeholderTextColor="#666" value={name} onChangeText={setName} />
+            <TouchableOpacity style={[styles.modalButton, !name && styles.disabledButton]} onPress={() => onComplete(name)} disabled={!name}>
+                <Text style={styles.modalButtonText}>Next</Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
+const GenderStep = ({ onComplete }: { onComplete: (gender: string) => void }) => (
+    <View style={styles.stepContainer}>
+        <Text style={styles.modalTitle}>Character's Gender?</Text>
+        <TouchableOpacity style={styles.modalButton} onPress={() => onComplete('Male')}><Text style={styles.modalButtonText}>Male</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.modalButton} onPress={() => onComplete('Female')}><Text style={styles.modalButtonText}>Female</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.modalButton} onPress={() => onComplete('Non-binary')}><Text style={styles.modalButtonText}>Non-binary</Text></TouchableOpacity>
+    </View>
+);
+const AgeStep = ({ onComplete }: { onComplete: (age: string) => void }) => {
+    const [age, setAge] = useState('');
+    return (
+        <View style={styles.stepContainer}>
+            <Text style={styles.modalTitle}>Character's Age?</Text>
+            <TextInput style={styles.input} placeholder="e.g., 25" placeholderTextColor="#666" value={age} onChangeText={setAge} keyboardType="number-pad" />
+            <TouchableOpacity style={[styles.modalButton, !age && styles.disabledButton]} onPress={() => onComplete(age)} disabled={!age}>
+                <Text style={styles.modalButtonText}>Generate Story</Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
 
 // --- Main Play Button Modal ---
 type PlayButtonModalProps = {
@@ -84,6 +160,8 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
 export default function TabsLayout() {
   const [playModalVisible, setPlayModalVisible] = useState(false);
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
+  const [characterModalVisible, setCharacterModalVisible] = useState(false);
+  const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
@@ -93,22 +171,23 @@ export default function TabsLayout() {
     setQuickStartModalVisible(true);
   };
 
-  const onGenreSelect = async (genre: string) => {
+  const onGenreSelect = (genre: string) => {
     setQuickStartModalVisible(false);
-    if (!user) return;
+    setSelectedGenre(genre);
+    setCharacterModalVisible(true);
+  };
 
-    // MODIFIED: Added logic to determine the tag and pass all 4 arguments
-    let tag = genre;
-    if (genre === "Modern Day Drama") {
-        tag = "Drama, 21st Century";
-    } else if (genre === "Medieval Drama") {
-        tag = "Drama, Medieval Times";
-    } else if (genre === "Romance") {
-        tag = "Romance, Drama";
-    }
+  const onCharacterComplete = async (playerData: PlayerData) => {
+    setCharacterModalVisible(false);
+    if (!user || !selectedGenre) return;
+
+    let tag = selectedGenre;
+    if (selectedGenre === "Modern Day Drama") tag = "Drama, 21st Century";
+    if (selectedGenre === "Medieval Drama") tag = "Drama, Medieval Times";
+    if (selectedGenre === "Romance") tag = "Romance, Drama";
 
     setIsGenerating(true);
-    await handleQuickStart(genre, tag, user, router);
+    await handleQuickStart(selectedGenre, tag, playerData, user, router);
     setIsGenerating(false);
   };
 
@@ -133,6 +212,7 @@ export default function TabsLayout() {
       
       <PlayButtonModal visible={playModalVisible} onClose={() => setPlayModalVisible(false)} onQuickStart={openQuickStart} />
       <QuickStartModal visible={quickStartModalVisible} onClose={() => setQuickStartModalVisible(false)} onSelectGenre={onGenreSelect} />
+      <CharacterCreationModal visible={characterModalVisible} onClose={() => setCharacterModalVisible(false)} onComplete={onCharacterComplete} />
 
       {isGenerating && (
         <View style={styles.loadingOverlay}>
@@ -195,5 +275,38 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         marginTop: 15,
         fontSize: 16,
-    }
+    },
+    stepContainer: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    input: {
+        backgroundColor: '#1e1e1e',
+        color: '#FFFFFF',
+        paddingHorizontal: 20,
+        paddingVertical: 15,
+        borderRadius: 10,
+        fontSize: 18,
+        borderWidth: 1,
+        borderColor: '#333',
+        width: '100%',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    modalButton: {
+        backgroundColor: '#6200ee',
+        paddingVertical: 15,
+        borderRadius: 25,
+        alignItems: 'center',
+        width: '100%',
+        marginTop: 10,
+    },
+    modalButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    disabledButton: {
+        backgroundColor: '#333',
+    },
 });
