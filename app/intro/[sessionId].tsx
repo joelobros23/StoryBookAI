@@ -17,7 +17,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { getImageUrl } from '../../lib/appwrite';
-import { createNewSession, getStoryHistory, getStorySession, saveSessionPlayerData } from '../../lib/history';
+// MODIFIED: Import getStoryImagePaths to reliably find the cover image
+import { createNewSession, getStoryImagePaths, getStorySession, saveSessionPlayerData } from '../../lib/history';
 import { PlayerData, StoryDocument, StorySession } from '../types/story';
 
 type IntroStep = 'name' | 'gender' | 'age';
@@ -46,17 +47,32 @@ export default function IntroScreen() {
             const parsedStory = JSON.parse(storyString) as StoryDocument;
             setStory(parsedStory);
 
-            // MODIFIED: This logic now correctly finds the session and its associated image.
-            // First, try to find a session by the passed sessionId. This handles "continue from history".
-            let storySession = await getStorySession(sessionId);
-            
-            // If no session is found, it might be a "start new from creation" case.
-            // In this scenario, find *any* existing session for this story to get the image path.
-            if (!storySession) {
-                const allHistory = await getStoryHistory();
-                storySession = allHistory.find(s => s.story.$id === parsedStory.$id) || null;
+            // --- MODIFIED: This logic now correctly finds the image path ---
+            // 1. Directly get the reliable image path from our dedicated map.
+            const imagePaths = await getStoryImagePaths();
+            const reliableImagePath = imagePaths[parsedStory.$id];
+
+            // 2. Try to find an actual session. This is for "Continue from History".
+            const storySession = await getStorySession(sessionId);
+
+            // 3. If a session exists, use it, but ensure its image path is up-to-date.
+            if (storySession) {
+                storySession.localCoverImagePath = reliableImagePath || storySession.localCoverImagePath;
+                setSession(storySession);
+            } else {
+                // 4. If no session exists (e.g., starting from Creations), create a temporary
+                // session object for rendering, using the reliable image path.
+                setSession({
+                    story: parsedStory,
+                    sessionId: parsedStory.$id, // Use story ID as a placeholder
+                    localCoverImagePath: reliableImagePath,
+                    content: [],
+                    sessionDate: new Date().toISOString(),
+                    playerData: {},
+                    isLocal: parsedStory.isLocal,
+                });
             }
-            setSession(storySession);
+            // --- End of modification ---
 
             if (parsedStory.userId === user?.$id) {
                 setCreatorName(user.name);
