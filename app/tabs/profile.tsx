@@ -20,7 +20,6 @@ const PAGE_SIZE = 8;
 export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
-    // MODIFIED: Get insets to apply manual padding
     const insets = useSafeAreaInsets();
     
     // --- State for Creations Tab ---
@@ -115,8 +114,15 @@ export default function ProfileScreen() {
     const fetchHistory = async () => {
         setIsHistoryLoading(true);
         try {
+            if (!user) {
+                setHistory([]);
+                return;
+            }
             const historySessions = await getStoryHistory();
-            const sortedHistory = [...historySessions].sort((a, b) => {
+            // MODIFIED: Filter history to only show sessions for the current user.
+            const userHistory = historySessions.filter(session => session.story.userId === user.$id);
+
+            const sortedHistory = [...userHistory].sort((a, b) => {
                 const dateA = new Date(a.sessionDate).getTime();
                 const dateB = new Date(b.sessionDate).getTime();
                 return sortOrder === 'Recent' ? dateB - dateA : dateA - dateB;
@@ -235,7 +241,6 @@ export default function ProfileScreen() {
                     ListFooterComponent={renderCreationsFooter}
                     onRefresh={handleRefreshCreations}
                     refreshing={isRefreshing}
-                    // MODIFIED: Add contentContainerStyle for bottom padding
                     contentContainerStyle={{ paddingBottom: insets.bottom }}
                 />
             );
@@ -253,7 +258,6 @@ export default function ProfileScreen() {
                     renderItem={renderHistoryItem} 
                     keyExtractor={(item) => item.sessionId} 
                     ListEmptyComponent={<Text style={styles.emptyListText}>Your story history is empty.</Text>} 
-                    // MODIFIED: Add contentContainerStyle for bottom padding
                     contentContainerStyle={{ paddingBottom: insets.bottom }}
                 />
             </>
@@ -277,7 +281,6 @@ export default function ProfileScreen() {
     );
 
     return (
-        // MODIFIED: Replaced SafeAreaView with a View and manual padding
         <View style={[styles.safeArea, { paddingTop: insets.top }]}>
             <View style={styles.container}>
                 <View style={styles.header}>

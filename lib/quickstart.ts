@@ -4,7 +4,6 @@ import { Alert } from 'react-native';
 import { PlayerData, StoryDocument } from '../app/types/story';
 import { ID } from './appwrite';
 import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
-// MODIFIED: Removed createNewSession and saveSessionPlayerData as they are no longer needed here
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -39,25 +38,31 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
         },
         required: ["title", "description", "opening", "story_summary", "plot_essentials"]
     };
-    const prompt = `Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. The story must be tailored for the following player character:
+    const prompt = `You are a Creative story teller, Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. The story must be tailored for the following player character:
     - Name: ${playerData.name}
     - Gender: ${playerData.gender}
     - Age: ${playerData.age}
 
     Provide a title, a short description, an exciting opening scene for the player, a brief summary of the overall story, and 2-3 essential plot points for the AI to remember. The story should revolve around the player's character.
     
+    Crucially, the 'description' and 'opening' fields must be written in the second person, addressing the player directly as 'You'. This is to create an immersive experience where the player feels they are the main character.
+
     Respond with only a valid JSON object that conforms to the following schema: ${JSON.stringify(schema)}`;
 
     try {
         const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
         const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
+                generationConfig: { 
+                    responseMimeType: "application/json",
+                    temperature: 1.0,
+                    topP: 0.5
+                }
             })
         });
         if (!response.ok) throw new Error(`API Error: ${response.status}`);
@@ -73,12 +78,19 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
 /**
  * Generates a high-quality, concise image prompt from story details.
  */
-async function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string): Promise<string> {
-    const prompt = `You are a creative assistant. Based on the following story details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
+async function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string, playerData: PlayerData): Promise<string> {
+    const prompt = `You are a creative assistant. Based on the following story and character details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
 
 Story Title: ${details.title}
 Genre: ${genre}
-Description: ${details.description}`;
+Description: ${details.description}
+
+Character Details:
+- Name: ${playerData.name}
+- Gender: ${playerData.gender}
+- Age: ${playerData.age}
+
+Ensure the character depicted in the image accurately reflects these details, especially their age.`;
 
     try {
         const imagePrompt = await generateStoryContinuation(
@@ -88,10 +100,10 @@ Description: ${details.description}`;
             undefined,
             prompt
         );
-        return imagePrompt || `${details.title}, ${genre}, vibrant anime style, epic scene, cinematic lighting`;
+        return imagePrompt || `${details.title}, ${genre}, vibrant anime style, ${playerData.gender} character aged ${playerData.age}, epic scene, cinematic lighting`;
     } catch (error) {
         console.error("Failed to generate image prompt, using fallback:", error);
-        return `${details.title}, ${genre}, vibrant anime style, epic scene, cinematic lighting`;
+        return `${details.title}, ${genre}, vibrant anime style, ${playerData.gender} character aged ${playerData.age}, epic scene, cinematic lighting`;
     }
 }
 
@@ -120,7 +132,7 @@ export async function handleQuickStart(
 
     let base64Image: string | null = null;
     try {
-        const imagePrompt = await generateImagePromptFromStory(storyDetails, genre);
+        const imagePrompt = await generateImagePromptFromStory(storyDetails, genre, playerData);
         base64Image = await generateImageFromPrompt(imagePrompt);
     } catch (error) {
         console.error("Quick Start image generation failed, proceeding without image:", error);
@@ -140,8 +152,6 @@ export async function handleQuickStart(
         localCoverImageBase64: base64Image || undefined,
     };
 
-    // MODIFIED: Navigate to the intro screen, passing the generated story and player data.
-    // The intro screen will now be responsible for creating the session.
     router.push({
         pathname: '/intro/[sessionId]',
         params: { 
