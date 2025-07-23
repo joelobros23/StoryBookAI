@@ -4,8 +4,7 @@ import { Alert } from 'react-native';
 import { PlayerData, StoryDocument } from '../app/types/story';
 import { ID } from './appwrite';
 import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
-// MODIFIED: Added 'saveSessionPlayerData' to the import
-import { createNewSession, saveSessionPlayerData } from './history';
+// MODIFIED: Removed createNewSession and saveSessionPlayerData as they are no longer needed here
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -131,7 +130,7 @@ export async function handleQuickStart(
         ...storyDetails,
         tags: tag,
         ai_instruction: DEFAULT_AI_INSTRUCTIONS,
-        ask_user_name: false, // Player data is now collected beforehand
+        ask_user_name: false,
         ask_user_age: false,
         ask_user_gender: false,
         userId: user.$id,
@@ -141,18 +140,14 @@ export async function handleQuickStart(
         localCoverImageBase64: base64Image || undefined,
     };
 
-    try {
-        const newSession = await createNewSession(storyData);
-        // Save the player data collected before generation
-        await saveSessionPlayerData(newSession.sessionId, playerData);
-        
-        router.push({
-            pathname: '/intro/[sessionId]',
-            params: { sessionId: newSession.sessionId, story: JSON.stringify(newSession.story) }
-        });
-
-    } catch (error: any) {
-        console.error("Failed to save quick start story locally:", error);
-        Alert.alert("Error", "Could not save the new story.");
-    }
+    // MODIFIED: Navigate to the intro screen, passing the generated story and player data.
+    // The intro screen will now be responsible for creating the session.
+    router.push({
+        pathname: '/intro/[sessionId]',
+        params: { 
+            sessionId: storyData.$id, 
+            story: JSON.stringify(storyData),
+            playerData: JSON.stringify(playerData) 
+        }
+    });
 }

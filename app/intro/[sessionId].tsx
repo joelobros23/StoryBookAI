@@ -23,71 +23,9 @@ import { PlayerData, StoryDocument, StorySession } from '../types/story';
 type IntroStep = 'name' | 'gender' | 'age';
 type ViewMode = 'details' | 'questions';
 
-/**
- * Regenerates the core plot of a romance story to fit the player's character.
- * @param currentStory The original story document.
- * @param playerData The player's chosen name, age, and gender.
- * @returns The updated story document.
- */
-const regenerateRomanceStory = async (currentStory: StoryDocument, playerData: PlayerData): Promise<StoryDocument> => {
-    console.log("Regenerating romance story for player...");
-
-    const schema = {
-        type: "OBJECT",
-        properties: {
-            "story_summary": { "type": "STRING" },
-            "plot_essentials": { "type": "STRING" },
-        },
-        required: ["story_summary", "plot_essentials"]
-    };
-
-    const prompt = `A romance story is being generated. The initial premise is:
-    - Title: ${currentStory.title}
-    - Description: ${currentStory.description}
-    - Original Summary: ${currentStory.story_summary}
-    - Original Plot Essentials: ${currentStory.plot_essentials}
-
-    The player has created their character:
-    - Name: ${playerData.name}
-    - Gender: ${playerData.gender}
-    - Age: ${playerData.age}
-
-    Your task is to rewrite the "story_summary" and "plot_essentials" to be tailored specifically for this player character, keeping the romance genre in mind. The story should now revolve around them. For example, if the original story was about a prince, and the player is female, she might now be the princess, or a commoner who meets the prince. Adapt the narrative to fit the player's gender and persona.
-
-    Respond with only a valid JSON object that conforms to the following schema: ${JSON.stringify(schema)}`;
-
-    try {
-        const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
-
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json" }
-            })
-        });
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
-        const result = await response.json();
-        const jsonString = result.candidates[0].content.parts[0].text;
-        const newDetails = JSON.parse(jsonString);
-
-        return {
-            ...currentStory,
-            story_summary: newDetails.story_summary,
-            plot_essentials: newDetails.plot_essentials,
-        };
-
-    } catch (error) {
-        console.error("Failed to regenerate story details:", error);
-        Alert.alert("Story Update Failed", "The AI could not adapt the story. Continuing with the original version.");
-        return currentStory;
-    }
-};
-
 export default function IntroScreen() {
-    const { sessionId, story: storyString } = useLocalSearchParams<{ sessionId: string; story?: string }>();
+    // MODIFIED: Added playerDataString to capture pre-filled character data
+    const { sessionId, story: storyString, playerData: playerDataString } = useLocalSearchParams<{ sessionId: string; story?: string, playerData?: string }>();
     const router = useRouter();
     const { user } = useAuth();
 
@@ -108,6 +46,11 @@ export default function IntroScreen() {
             }
             const parsedStory = JSON.parse(storyString) as StoryDocument;
             setStory(parsedStory);
+
+            // MODIFIED: If player data is passed via params (from quick start), set it in state.
+            if (playerDataString) {
+                setPlayerData(JSON.parse(playerDataString));
+            }
 
             const imagePaths = await getStoryImagePaths();
             const reliableImagePath = imagePaths[parsedStory.$id];
@@ -160,21 +103,17 @@ export default function IntroScreen() {
         setIsLoading(true);
 
         try {
-            let storyToSave = story;
+            // Combine pre-filled data (from quick start) with any data collected on this screen
+            const combinedPlayerData = { ...playerData, ...finalPlayerData };
 
-            // MODIFIED: Check if it's a romance story and needs regeneration
-            if (story.tags === 'Romance, Drama' && (story.ask_user_gender || story.ask_user_name || story.ask_user_age)) {
-                 storyToSave = await regenerateRomanceStory(story, finalPlayerData);
-            }
-
-            const newSession = await createNewSession(storyToSave);
-            if (Object.keys(finalPlayerData).length > 0) {
-                await saveSessionPlayerData(newSession.sessionId, finalPlayerData);
+            const newSession = await createNewSession(story);
+            if (Object.keys(combinedPlayerData).length > 0) {
+                await saveSessionPlayerData(newSession.sessionId, combinedPlayerData);
             }
             
             router.replace({
                 pathname: '/play/[sessionId]',
-                params: { sessionId: newSession.sessionId, story: JSON.stringify(storyToSave) },
+                params: { sessionId: newSession.sessionId, story: JSON.stringify(newSession.story) },
             });
 
         } catch (error) {
