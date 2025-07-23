@@ -7,7 +7,6 @@ import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, deleteImageFile, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
-// MODIFIED: Import new functions for image path management
 import { deleteLocalCreation, deleteStorySession, disassociateImagePath, getLocalCreations, getStoryHistory, getStoryImagePaths } from '../../lib/history';
 import { StoryDocument, StorySession } from '../types/story';
 
@@ -15,97 +14,142 @@ type ProfileTab = 'Creations' | 'History';
 type SortOrder = 'Recent' | 'Oldest';
 type DeleteType = 'Creation' | 'History';
 
+const PAGE_SIZE = 8;
+
 export default function ProfileScreen() {
     const { user, logout } = useAuth();
     const router = useRouter();
     
+    // --- State for Creations Tab ---
     const [creations, setCreations] = useState<StorySession[]>([]);
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [hasMoreCreations, setHasMoreCreations] = useState(true);
+    const [lastFetchedId, setLastFetchedId] = useState<string | null>(null);
+    
+    // --- State for History Tab ---
     const [history, setHistory] = useState<StorySession[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+    const [sortOrder, setSortOrder] = useState<SortOrder>('Recent');
+
+    // --- General State ---
     const [activeTab, setActiveTab] = useState<ProfileTab>('Creations');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [itemToDelete, setItemToDelete] = useState<StorySession | null>(null);
     const [deleteType, setDeleteType] = useState<DeleteType | null>(null);
-    const [sortOrder, setSortOrder] = useState<SortOrder>('Recent');
+
+    // --- Data Fetching ---
+
+    const fetchCreations = async (refresh = false) => {
+        if (isFetchingMore) return;
+        if (!refresh && !hasMoreCreations) return;
+
+        setIsFetchingMore(true);
+        if (refresh) {
+            setIsRefreshing(true);
+        }
+
+        try {
+            const cursor = refresh ? null : lastFetchedId;
+            
+            // --- Fetch from Appwrite ---
+            const appwriteQueries = [
+                Query.equal('userId', user!.$id), 
+                Query.orderDesc('$createdAt'), 
+                Query.limit(PAGE_SIZE)
+            ];
+            if (cursor) {
+                appwriteQueries.push(Query.cursorAfter(cursor));
+            }
+            const appwriteResponse = await databases.listDocuments(databaseId, storiesCollectionId, appwriteQueries);
+            const appwriteDocs = appwriteResponse.documents as StoryDocument[];
+
+            // --- Fetch ALL Local Creations (as they are few) ---
+            // We only fetch local stories once during a refresh, then merge with Appwrite results.
+            const localDocs = refresh ? (await getLocalCreations()).filter(s => s.userId === user!.$id) : [];
+
+            const allNewDocs = [...appwriteDocs, ...localDocs];
+
+            if (allNewDocs.length === 0 && !refresh) {
+                setHasMoreCreations(false);
+                return;
+            }
+
+            const imagePaths = await getStoryImagePaths();
+            const newSessions = allNewDocs.map(story => ({
+                story,
+                sessionId: story.$id,
+                sessionDate: story.$createdAt,
+                isLocal: !!story.isLocal,
+                content: [],
+                playerData: {},
+                localCoverImagePath: imagePaths[story.$id] || undefined
+            }));
+
+            setCreations(prev => {
+                const combined = refresh ? newSessions : [...prev, ...newSessions];
+                const unique = combined.filter((session, index, self) =>
+                    index === self.findIndex((s) => s.story.$id === session.story.$id)
+                );
+                return unique.sort((a, b) => new Date(b.sessionDate).getTime() - new Date(a.sessionDate).getTime());
+            });
+
+            if (appwriteDocs.length > 0) {
+                setLastFetchedId(appwriteDocs[appwriteDocs.length - 1].$id);
+            }
+            if (appwriteDocs.length < PAGE_SIZE) {
+                setHasMoreCreations(false);
+            }
+
+        } catch (error) {
+            console.error("Failed to fetch creations:", error);
+            Alert.alert("Error", "Could not fetch your creations.");
+        } finally {
+            setIsFetchingMore(false);
+            setIsInitialLoading(false);
+            setIsRefreshing(false);
+        }
+    };
+
+    const fetchHistory = async () => {
+        setIsHistoryLoading(true);
+        try {
+            const historySessions = await getStoryHistory();
+            const sortedHistory = [...historySessions].sort((a, b) => {
+                const dateA = new Date(a.sessionDate).getTime();
+                const dateB = new Date(b.sessionDate).getTime();
+                return sortOrder === 'Recent' ? dateB - dateA : dateA - dateB;
+            });
+            setHistory(sortedHistory);
+        } catch (error) {
+             console.error("Failed to fetch history:", error);
+        } finally {
+            setIsHistoryLoading(false);
+        }
+    };
 
     useFocusEffect(
         useCallback(() => {
-            const fetchData = async () => {
-                if (!user) {
-                    setIsLoading(false);
-                    return;
+            if (user) {
+                if (activeTab === 'Creations') {
+                    handleRefreshCreations();
+                } else {
+                    fetchHistory();
                 }
-                setIsLoading(true);
-
-                try {
-                    if (activeTab === 'Creations') {
-                        // --- MODIFIED: Fetching logic now uses the new image path map ---
-                        const [appwriteResponse, localCreationsDocs, imagePaths, localHistory] = await Promise.all([
-                            databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('userId', user.$id)]),
-                            getLocalCreations(),
-                            getStoryImagePaths(),
-                            getStoryHistory() // Still needed for history tab and session data
-                        ]);
-
-                        const appwriteCreations = appwriteResponse.documents as StoryDocument[];
-                        const userLocalCreations = localCreationsDocs.filter(s => s.userId === user.$id);
-                        const allCreationsMap = new Map<string, StorySession>();
-
-                        // Process Appwrite creations
-                        appwriteCreations.forEach(story => {
-                            allCreationsMap.set(story.$id, {
-                                story,
-                                sessionId: story.$id, // Placeholder
-                                sessionDate: story.$createdAt,
-                                isLocal: false,
-                                content: [],
-                                playerData: {},
-                                localCoverImagePath: imagePaths[story.$id] || undefined
-                            });
-                        });
-
-                        // Process local creations
-                        userLocalCreations.forEach(story => {
-                            if (!allCreationsMap.has(story.$id)) {
-                                allCreationsMap.set(story.$id, {
-                                    story,
-                                    sessionId: story.$id, // Placeholder
-                                    sessionDate: story.$createdAt,
-                                    isLocal: true,
-                                    content: [],
-                                    playerData: {},
-                                    localCoverImagePath: imagePaths[story.$id] || undefined
-                                });
-                            }
-                        });
-                        
-                        const mergedCreations = Array.from(allCreationsMap.values()).sort((a, b) => new Date(b.story.$createdAt).getTime() - new Date(a.story.$createdAt).getTime());
-                        setCreations(mergedCreations);
-
-                    } else { // History Tab
-                        const historySessions = await getStoryHistory();
-                        const sortedHistory = [...historySessions].sort((a, b) => {
-                            const dateA = new Date(a.sessionDate).getTime();
-                            const dateB = new Date(b.sessionDate).getTime();
-                            return sortOrder === 'Recent' ? dateB - dateA : dateA - dateB;
-                        });
-                        setHistory(sortedHistory);
-                    }
-                } catch (error) {
-                    console.error("Failed to fetch data:", error);
-                    Alert.alert("Error", "Could not fetch your data.");
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-
-            fetchData();
+            }
         }, [user, activeTab, sortOrder])
     );
-
-    const handleLogout = async () => {
-        await logout();
+    
+    const handleRefreshCreations = () => {
+        setCreations([]);
+        setLastFetchedId(null);
+        setHasMoreCreations(true);
+        fetchCreations(true);
     };
+
+    // --- Handlers ---
+    const handleLogout = async () => { await logout(); };
 
     const handleStartCreation = (session: StorySession) => {
         router.push({
@@ -115,73 +159,50 @@ export default function ProfileScreen() {
     };
 
     const handleContinueSession = (session: StorySession) => {
-        const { story, playerData, sessionId } = session;
-        const isNameMissing = story.ask_user_name && !playerData?.name;
-        const isGenderMissing = story.ask_user_gender && !playerData?.gender;
-        const isAgeMissing = story.ask_user_age && !playerData?.age;
-
-        if (isNameMissing || isGenderMissing || isAgeMissing) {
-            router.push({
-                pathname: '/intro/[sessionId]',
-                params: { sessionId: sessionId, story: JSON.stringify(story) },
-            });
-        } else {
-            router.push({
-                pathname: '/play/[sessionId]',
-                params: { sessionId: sessionId, story: JSON.stringify(story) },
-            });
-        }
+        router.push({
+            pathname: '/play/[sessionId]',
+            params: { sessionId: session.sessionId, story: JSON.stringify(session.story) },
+        });
     };
 
     const handleDelete = async () => {
         if (!itemToDelete) return;
 
-        setIsLoading(true);
         try {
             if (deleteType === 'Creation') {
-                // --- MODIFIED: Deleting a Creation now correctly cleans up the image file and its map entry ---
                 const storyIdToDelete = itemToDelete.story.$id;
                 const imagePaths = await getStoryImagePaths();
                 const imagePathToDelete = imagePaths[storyIdToDelete];
-
-                // 1. Delete all history sessions for this story.
+                
                 const allHistory = await getStoryHistory();
-                const sessionsToDelete = allHistory.filter(s => s.story.$id === storyIdToDelete);
-                for (const session of sessionsToDelete) {
-                    await deleteStorySession(session.sessionId); // This no longer touches the file
+                for (const session of allHistory.filter(s => s.story.$id === storyIdToDelete)) {
+                    await deleteStorySession(session.sessionId);
                 }
 
-                // 2. Delete the creation record from Appwrite or local storage
                 if (itemToDelete.isLocal) {
                     await deleteLocalCreation(storyIdToDelete);
                 } else {
-                    if (itemToDelete.story.cover_image_id) {
-                        await deleteImageFile(itemToDelete.story.cover_image_id);
-                    }
+                    if (itemToDelete.story.cover_image_id) await deleteImageFile(itemToDelete.story.cover_image_id);
                     await databases.deleteDocument(databaseId, storiesCollectionId, storyIdToDelete);
                 }
 
-                // 3. Clean up the image path mapping and the local file itself
                 if (imagePathToDelete) {
                     await disassociateImagePath(storyIdToDelete);
                     await FileSystem.deleteAsync(imagePathToDelete, { idempotent: true });
                 }
                 
                 Alert.alert("Success", "Creation and all associated history deleted.");
-                setCreations((prev: StorySession[]) => prev.filter((c: StorySession) => c.story.$id !== storyIdToDelete));
-                setHistory((prev: StorySession[]) => prev.filter((h: StorySession) => h.story.$id !== storyIdToDelete));
+                setCreations(prev => prev.filter(c => c.story.$id !== storyIdToDelete));
 
             } else if (deleteType === 'History') {
-                // This is now safe. It only deletes the session, not the image.
                 await deleteStorySession(itemToDelete.sessionId);
                 Alert.alert("Success", "History session deleted.");
-                setHistory((prev: StorySession[]) => prev.filter((h: StorySession) => h.sessionId !== itemToDelete.sessionId));
+                setHistory(prev => prev.filter(h => h.sessionId !== itemToDelete.sessionId));
             }
         } catch (error) {
             console.error(`Failed to delete ${deleteType}:`, error);
             Alert.alert("Error", `Could not delete ${deleteType}.`);
         } finally {
-            setIsLoading(false);
             setShowDeleteModal(false);
             setItemToDelete(null);
         }
@@ -193,53 +214,32 @@ export default function ProfileScreen() {
         setShowDeleteModal(true);
     };
 
-    const renderCreationItem = ({ item }: { item: StorySession }) => (
-        <TouchableOpacity 
-            style={styles.storyCard} 
-            onPress={() => handleStartCreation(item)}
-            onLongPress={() => openDeleteModal(item, 'Creation')}
-        >
-            {item.localCoverImagePath ? (
-                <Image source={{ uri: item.localCoverImagePath }} style={styles.storyCardImage} resizeMode="cover" />
-            ) : item.story.cover_image_id ? (
-                <Image source={{ uri: getImageUrl(item.story.cover_image_id) }} style={styles.storyCardImage} resizeMode="cover" />
-            ) : (
-                <View style={styles.storyCardIcon}><Feather name="book" size={30} color="#c792ea" /></View>
-            )}
-            <View style={styles.storyCardTextContainer}>
-                <Text style={styles.storyTitle} numberOfLines={1}>{item.story.title}</Text>
-                <Text style={styles.storyDescription} numberOfLines={2}>{item.story.description || 'No description'}</Text>
-            </View>
-            <Feather name="chevron-right" size={24} color="#555" style={{ marginRight: 15 }} />
-        </TouchableOpacity>
-    );
+    // --- Render Functions ---
 
-    const renderHistoryItem = ({ item }: { item: StorySession }) => (
-        <TouchableOpacity 
-            style={styles.storyCard} 
-            onPress={() => handleContinueSession(item)}
-            onLongPress={() => openDeleteModal(item, 'History')}
-        >
-            {item.localCoverImagePath ? (
-                <Image source={{ uri: item.localCoverImagePath }} style={styles.storyCardImage} resizeMode="cover" />
-            ) : (
-                <View style={styles.storyCardIcon}><Feather name="book-open" size={30} color="#82aaff" /></View>
-            )}
-            <View style={styles.storyCardTextContainer}>
-                <Text style={styles.storyTitle} numberOfLines={1}>{item.story.title}</Text>
-                <Text style={styles.storyDescription} numberOfLines={1}>
-                    Played on: {new Date(item.sessionDate).toLocaleDateString()}
-                </Text>
-            </View>
-            <View><Text style={styles.continueText}>Continue</Text></View>
-        </TouchableOpacity>
-    );
-    
+    const renderCreationsFooter = () => {
+        if (!isFetchingMore) return null;
+        return <ActivityIndicator style={{ marginVertical: 20 }} size="large" color="#c792ea" />;
+    };
+
     const renderContent = () => {
-        if (isLoading) return <ActivityIndicator size="large" color="#c792ea" style={{ marginTop: 20 }}/>;
         if (activeTab === 'Creations') {
-            return <FlatList data={creations} renderItem={renderCreationItem} keyExtractor={(item) => item.story.$id} ListEmptyComponent={<Text style={styles.emptyListText}>You haven't created any stories yet.</Text>} />;
+            if (isInitialLoading) return <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#c792ea"/>;
+            return (
+                <FlatList 
+                    data={creations} 
+                    renderItem={renderCreationItem} 
+                    keyExtractor={(item) => item.story.$id} 
+                    ListEmptyComponent={<Text style={styles.emptyListText}>You haven't created any stories yet.</Text>}
+                    onEndReached={() => fetchCreations()}
+                    onEndReachedThreshold={0.5}
+                    ListFooterComponent={renderCreationsFooter}
+                    onRefresh={handleRefreshCreations}
+                    refreshing={isRefreshing}
+                />
+            );
         }
+
+        if (isHistoryLoading) return <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#c792ea"/>;
         return (
             <>
                 <View style={styles.sortContainer}>
@@ -250,6 +250,22 @@ export default function ProfileScreen() {
             </>
         );
     };
+
+    const renderCreationItem = ({ item }: { item: StorySession }) => (
+        <TouchableOpacity style={styles.storyCard} onPress={() => handleStartCreation(item)} onLongPress={() => openDeleteModal(item, 'Creation')}>
+            {item.localCoverImagePath ? <Image source={{ uri: item.localCoverImagePath }} style={styles.storyCardImage} /> : item.story.cover_image_id ? <Image source={{ uri: getImageUrl(item.story.cover_image_id) }} style={styles.storyCardImage} /> : <View style={styles.storyCardIcon}><Feather name="book" size={30} color="#c792ea" /></View>}
+            <View style={styles.storyCardTextContainer}><Text style={styles.storyTitle} numberOfLines={1}>{item.story.title}</Text><Text style={styles.storyDescription} numberOfLines={2}>{item.story.description || 'No description'}</Text></View>
+            <Feather name="chevron-right" size={24} color="#555" style={{ marginRight: 15 }} />
+        </TouchableOpacity>
+    );
+
+    const renderHistoryItem = ({ item }: { item: StorySession }) => (
+        <TouchableOpacity style={styles.storyCard} onPress={() => handleContinueSession(item)} onLongPress={() => openDeleteModal(item, 'History')}>
+            {item.localCoverImagePath ? <Image source={{ uri: item.localCoverImagePath }} style={styles.storyCardImage} /> : <View style={styles.storyCardIcon}><Feather name="book-open" size={30} color="#82aaff" /></View>}
+            <View style={styles.storyCardTextContainer}><Text style={styles.storyTitle} numberOfLines={1}>{item.story.title}</Text><Text style={styles.storyDescription} numberOfLines={1}>Played on: {new Date(item.sessionDate).toLocaleDateString()}</Text></View>
+            <View><Text style={styles.continueText}>Continue</Text></View>
+        </TouchableOpacity>
+    );
 
     return (
         <SafeAreaView style={styles.safeArea}>

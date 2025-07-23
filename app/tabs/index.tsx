@@ -2,8 +2,9 @@ import { Feather } from '@expo/vector-icons';
 import { Query } from 'appwrite';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+// MODIFIED: Import useSafeAreaInsets to manually control padding
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
 import { handleQuickStart } from '../../lib/quickstart';
@@ -83,51 +84,84 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
   );
 };
 
+const PAGE_SIZE = 6;
+
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [allStories, setAllStories] = useState<StoryDocument[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // MODIFIED: Get insets to apply manual padding
+  const insets = useSafeAreaInsets();
+
+  // --- State for Pagination ---
+  const [stories, setStories] = useState<StoryDocument[]>([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [lastFetchedId, setLastFetchedId] = useState<string | null>(null);
+
+  // --- State for Modals and Actions ---
   const [playModalVisible, setPlayModalVisible] = useState(false);
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
+  const fetchStories = async (refresh = false) => {
+    if (isFetchingMore) return;
+    if (!refresh && !hasMore) return;
+
+    setIsFetchingMore(true);
+    if (refresh) {
+        setIsRefreshing(true);
+    }
+
+    try {
+        const cursor = refresh ? null : lastFetchedId;
+        const queries = [
+            Query.orderDesc('$createdAt'),
+            Query.limit(PAGE_SIZE)
+        ];
+        if (cursor) {
+            queries.push(Query.cursorAfter(cursor));
+        }
+
+        const response = await databases.listDocuments(databaseId, storiesCollectionId, queries);
+        const newDocs = response.documents as StoryDocument[];
+
+        if (newDocs.length === 0) {
+            setHasMore(false);
+        } else {
+            setStories(prev => refresh ? newDocs : [...prev, ...newDocs]);
+            setLastFetchedId(newDocs[newDocs.length - 1].$id);
+            if (newDocs.length < PAGE_SIZE) {
+                setHasMore(false);
+            }
+        }
+    } catch (error: any) {
+        if (error.code !== 401) {
+            console.error("Failed to fetch stories:", error);
+            Alert.alert("Error", "Could not fetch stories.");
+        }
+    } finally {
+        setIsFetchingMore(false);
+        setIsInitialLoading(false);
+        setIsRefreshing(false);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
-      const fetchAllStories = async () => {
-        if (!user) {
-          setAllStories([]);
-          setIsLoading(false);
-          return;
-        }
-        setIsLoading(true);
-        try {
-          const response = await databases.listDocuments(
-            databaseId,
-            storiesCollectionId,
-            [Query.orderDesc('$createdAt')]
-          );
-          
-          setAllStories(response.documents as StoryDocument[]);
-
-        } catch (error: any) {
-          if (error.code !== 401) {
-              console.error("Failed to fetch all stories:", error);
-              Alert.alert("Error", "Could not fetch stories.");
-          }
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
-      fetchAllStories();
+        handleRefresh();
     }, [user])
   );
 
-  const handleStartNewStory = () => {
-    setPlayModalVisible(true);
+  const handleRefresh = () => {
+    setStories([]);
+    setLastFetchedId(null);
+    setHasMore(true);
+    fetchStories(true);
   };
 
+  const handleStartNewStory = () => setPlayModalVisible(true);
   const openQuickStart = () => {
     setPlayModalVisible(false);
     setQuickStartModalVisible(true);
@@ -137,7 +171,6 @@ export default function HomeScreen() {
     setQuickStartModalVisible(false);
     if (!user) return;
 
-    // NEW: Map selected genre to a specific tag for storage
     let tag = genre;
     if (genre === "Modern Day Drama") {
         tag = "Drama, 21st Century";
@@ -146,85 +179,85 @@ export default function HomeScreen() {
     }
 
     setIsGenerating(true);
-    // Pass both the original genre (for story generation) and the specific tag
     await handleQuickStart(genre, tag, user, router);
     setIsGenerating(false);
   };
 
   const handleStartStory = async (story: StoryDocument) => {
-    setIsGenerating(true);
-    try {
-        router.push({
-            pathname: '/intro/[sessionId]',
-            params: { sessionId: story.$id, story: JSON.stringify(story) },
-        });
-    } catch (error) {
-        console.error("Failed to create new session:", error);
-        Alert.alert("Error", "Could not start a new story session.");
-    } finally {
-        setIsGenerating(false);
-    }
+    router.push({
+        pathname: '/intro/[sessionId]',
+        params: { sessionId: story.$id, story: JSON.stringify(story) },
+    });
   };
 
   const renderStoryCard = ({ item }: { item: StoryDocument }) => {
     const truncatedTitle = item.title.length > 15 ? item.title.substring(0, 15) + '...' : item.title;
     const truncatedDesc = item.description && item.description.length > 50 ? item.description.substring(0, 50) + '...' : item.description;
-    const truncatedTags = item.tags && item.tags.length > 15 ? item.tags.substring(0, 15) + '...' : item.tags;
-
     const imageSource = item.cover_image_id 
       ? { uri: getImageUrl(item.cover_image_id) } 
       : { uri: 'https://placehold.co/200x300/1e1e1e/FFFFFF?text=No+Image' };
 
     return (
-      <TouchableOpacity 
-        style={styles.storyCard} 
-        onPress={() => handleStartStory(item)}
-      >
-        <Image 
-          source={imageSource}
-          style={styles.storyCardImage}
-          resizeMode="cover"
-        />
+      <TouchableOpacity style={styles.storyCard} onPress={() => handleStartStory(item)}>
+        <Image source={imageSource} style={styles.storyCardImage} resizeMode="cover" />
         <View style={styles.storyCardTextContainer}>
             <Text style={styles.storyCardTitle}>{truncatedTitle}</Text>
             <Text style={styles.storyCardDescription}>{truncatedDesc || 'No description available.'}</Text>
-            <View style={styles.metaItem}>
-                <Feather style={{marginRight: 5 }} name="tag" size={16} color="#a9a9a9" />
-                <Text style={styles.storyCardMetaText}>{truncatedTags || 'No tags'}</Text>
-            </View>
+            <View style={styles.metaItem}><Feather style={{marginRight: 5 }} name="tag" size={16} color="#a9a9a9" /><Text style={styles.storyCardMetaText}>{item.tags || 'No tags'}</Text></View>
         </View>
       </TouchableOpacity>
     );
   };
+  
+  const renderHeader = () => (
+    <>
+      <View style={styles.header}>
+        <Text style={styles.title}>Storybook AI</Text>
+        <Text style={styles.subtitle}>Your collaborative storyteller</Text>
+      </View>
+      <TouchableOpacity style={styles.button} onPress={handleStartNewStory}>
+        <Text style={styles.buttonText}>Start New Story</Text>
+        <Feather name="arrow-right" size={20} color="#FFFFFF" style={{ marginLeft: 10 }}/>
+      </TouchableOpacity>
+      <View style={styles.allStoriesSection}>
+        <Text style={styles.allStoriesTitle}>Explore Stories</Text>
+      </View>
+    </>
+  );
+
+  const renderFooter = () => {
+    if (isInitialLoading) return null;
+    if (isFetchingMore) {
+        return <ActivityIndicator size="large" color="#c792ea" style={{ marginVertical: 20 }} />;
+    }
+    return null;
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Storybook AI</Text>
-          <Text style={styles.subtitle}>Your collaborative storyteller</Text>
-        </View>
-
-        <TouchableOpacity style={styles.button} onPress={handleStartNewStory}>
-          <Text style={styles.buttonText}>Start New Story</Text>
-          <Feather name="arrow-right" size={20} color="#FFFFFF" style={{ marginLeft: 10 }}/>
-        </TouchableOpacity>
-
-        <View style={styles.allStoriesSection}>
-          <Text style={styles.allStoriesTitle}>Explore Stories</Text>
-          {isLoading ? (
-            <ActivityIndicator size="large" color="#c792ea" style={{ marginTop: 20 }} />
-          ) : (
-            <FlatList
-              data={allStories}
-              renderItem={renderStoryCard}
-              keyExtractor={(item) => item.$id}
-              ListEmptyComponent={<Text style={styles.emptyListText}>No stories found. Be the first to create one!</Text>}
-              scrollEnabled={false}
-            />
-          )}
-        </View>
-      </ScrollView>
+    // MODIFIED: Replaced SafeAreaView with a standard View
+    <View style={styles.container}>
+      {isInitialLoading ? (
+         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color="#c792ea" /></View>
+      ) : (
+        <FlatList
+            data={stories}
+            renderItem={renderStoryCard}
+            keyExtractor={(item) => item.$id}
+            ListHeaderComponent={renderHeader}
+            ListFooterComponent={renderFooter}
+            ListEmptyComponent={<Text style={styles.emptyListText}>No stories found. Be the first to create one!</Text>}
+            onEndReached={() => fetchStories()}
+            onEndReachedThreshold={0.5}
+            onRefresh={handleRefresh}
+            refreshing={isRefreshing}
+            // MODIFIED: Use the insets to apply dynamic padding
+            contentContainerStyle={{
+                paddingHorizontal: 20,
+                paddingTop: insets.top,
+                paddingBottom: insets.bottom + 50, // Add extra space below the last item
+            }}
+        />
+      )}
 
       <PlayButtonModal visible={playModalVisible} onClose={() => setPlayModalVisible(false)} onQuickStart={openQuickStart} />
       <QuickStartModal visible={quickStartModalVisible} onClose={() => setQuickStartModalVisible(false)} onSelectGenre={onGenreSelect} />
@@ -235,38 +268,16 @@ export default function HomeScreen() {
             <Text style={modalStyles.loadingText}>Starting your adventure...</Text>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#121212',
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 0,
-  },
-  scrollContent: {
-    padding: 20,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    fontFamily: 'serif',
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#a9a9a9',
-    marginTop: 8,
-  },
+  container: { flex: 1, backgroundColor: '#121212' },
+  metaItem: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 0 },
+  header: { alignItems: 'center', marginBottom: 40, paddingTop: 20 },
+  title: { fontSize: 42, fontWeight: 'bold', color: '#FFFFFF', fontFamily: 'serif' },
+  subtitle: { fontSize: 18, color: '#a9a9a9', marginTop: 8 },
   button: {
     flexDirection: 'row',
     backgroundColor: '#6200ee',
@@ -276,36 +287,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: "#6200ee",
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
     elevation: 10,
     marginBottom: 40,
   },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  allStoriesSection: {
-    width: '100%',
-  },
-  allStoriesTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 20,
-    textAlign: 'left',
-  },
-  emptyListText: {
-    color: '#a9a9a9',
-    textAlign: 'center',
-    marginTop: 20,
-    fontStyle: 'italic',
-  },
+  buttonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+  allStoriesSection: { width: '100%' },
+  allStoriesTitle: { fontSize: 22, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20, textAlign: 'left' },
+  emptyListText: { color: '#a9a9a9', textAlign: 'center', marginTop: 20, fontStyle: 'italic' },
   storyCard: {
     flexDirection: 'row',
     borderRadius: 8,
@@ -314,38 +305,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#1e1e1e',
   },
-  storyCardImage: {
-    width: 140,
-    height: 140,
-    backgroundColor: '#333',
-  },
-  storyCardTextContainer: {
-    flex: 1,
-    padding: 15,
-    justifyContent: 'space-between',
-  },
-  storyCardMetaText: {
-    color: '#a9a9a9',
-    fontSize: 12,
-    textTransform: 'capitalize',
-  },
-  storyCardTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  storyCardDescription: {
-    color: '#e0e0e0',
-    fontSize: 14,
-  },
+  storyCardImage: { width: 140, height: 140, backgroundColor: '#333' },
+  storyCardTextContainer: { flex: 1, padding: 15, justifyContent: 'space-between' },
+  storyCardMetaText: { color: '#a9a9a9', fontSize: 12, textTransform: 'capitalize' },
+  storyCardTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+  storyCardDescription: { color: '#e0e0e0', fontSize: 14 },
 });
 
 const modalStyles = StyleSheet.create({
-    modalOverlay: {
-        flex: 1,
-        justifyContent: 'flex-end',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.7)' },
     modalContent: {
         backgroundColor: '#2a2a2a',
         paddingVertical: 20,
@@ -354,29 +322,10 @@ const modalStyles = StyleSheet.create({
         borderTopRightRadius: 20,
         alignItems: 'stretch',
     },
-    modalTitle: {
-        color: '#FFFFFF',
-        fontSize: 20,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 20,
-    },
-    modalOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 20,
-    },
-    modalOptionText: {
-        color: '#FFFFFF',
-        fontSize: 18,
-        marginLeft: 20,
-        fontWeight: '600',
-    },
-    separator: {
-      height: 1,
-      backgroundColor: '#444',
-      width: '100%',
-    },
+    modalTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+    modalOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20 },
+    modalOptionText: { color: '#FFFFFF', fontSize: 18, marginLeft: 20, fontWeight: '600' },
+    separator: { height: 1, backgroundColor: '#444', width: '100%' },
     loadingOverlay: {
         position: 'absolute',
         top: 0,
@@ -387,9 +336,5 @@ const modalStyles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    loadingText: {
-        color: '#FFFFFF',
-        marginTop: 15,
-        fontSize: 16,
-    }
+    loadingText: { color: '#FFFFFF', marginTop: 15, fontSize: 16 }
 });
