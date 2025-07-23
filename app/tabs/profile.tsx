@@ -1,12 +1,14 @@
 import { Feather } from '@expo/vector-icons';
 import { Query } from 'appwrite';
+import * as FileSystem from 'expo-file-system';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { databaseId, databases, deleteImageFile, getImageUrl, storiesCollectionId } from '../../lib/appwrite';
-import { deleteStorySession, getStoryHistory } from '../../lib/history';
+// MODIFIED: Import new functions for image path management
+import { deleteLocalCreation, deleteStorySession, disassociateImagePath, getLocalCreations, getStoryHistory, getStoryImagePaths } from '../../lib/history';
 import { StoryDocument, StorySession } from '../types/story';
 
 type ProfileTab = 'Creations' | 'History';
@@ -37,28 +39,43 @@ export default function ProfileScreen() {
 
                 try {
                     if (activeTab === 'Creations') {
-                        const appwriteResponse = await databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('userId', user.$id)]);
+                        // --- MODIFIED: Fetching logic now uses the new image path map ---
+                        const [appwriteResponse, localCreationsDocs, imagePaths, localHistory] = await Promise.all([
+                            databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('userId', user.$id)]),
+                            getLocalCreations(),
+                            getStoryImagePaths(),
+                            getStoryHistory() // Still needed for history tab and session data
+                        ]);
+
                         const appwriteCreations = appwriteResponse.documents as StoryDocument[];
-
-                        const localHistory = await getStoryHistory();
-                        const localCreations = localHistory.filter(s => s.isLocal && s.story.userId === user.$id);
-
+                        const userLocalCreations = localCreationsDocs.filter(s => s.userId === user.$id);
                         const allCreationsMap = new Map<string, StorySession>();
 
+                        // Process Appwrite creations
                         appwriteCreations.forEach(story => {
                             allCreationsMap.set(story.$id, {
                                 story,
-                                sessionId: story.$id,
+                                sessionId: story.$id, // Placeholder
                                 sessionDate: story.$createdAt,
                                 isLocal: false,
                                 content: [],
-                                playerData: {}
+                                playerData: {},
+                                localCoverImagePath: imagePaths[story.$id] || undefined
                             });
                         });
 
-                        localCreations.forEach(session => {
-                            if (!allCreationsMap.has(session.story.$id)) {
-                                allCreationsMap.set(session.story.$id, session);
+                        // Process local creations
+                        userLocalCreations.forEach(story => {
+                            if (!allCreationsMap.has(story.$id)) {
+                                allCreationsMap.set(story.$id, {
+                                    story,
+                                    sessionId: story.$id, // Placeholder
+                                    sessionDate: story.$createdAt,
+                                    isLocal: true,
+                                    content: [],
+                                    playerData: {},
+                                    localCoverImagePath: imagePaths[story.$id] || undefined
+                                });
                             }
                         });
                         
@@ -122,30 +139,43 @@ export default function ProfileScreen() {
         setIsLoading(true);
         try {
             if (deleteType === 'Creation') {
-                // Deleting a Creation: This removes the story and all its history.
+                // --- MODIFIED: Deleting a Creation now correctly cleans up the image file and its map entry ---
+                const storyIdToDelete = itemToDelete.story.$id;
+                const imagePaths = await getStoryImagePaths();
+                const imagePathToDelete = imagePaths[storyIdToDelete];
+
+                // 1. Delete all history sessions for this story.
                 const allHistory = await getStoryHistory();
-                const sessionsToDelete = allHistory.filter(s => s.story.$id === itemToDelete.story.$id);
-                
+                const sessionsToDelete = allHistory.filter(s => s.story.$id === storyIdToDelete);
                 for (const session of sessionsToDelete) {
-                    await deleteStorySession(session.sessionId);
+                    await deleteStorySession(session.sessionId); // This no longer touches the file
                 }
 
-                if (!itemToDelete.isLocal) {
+                // 2. Delete the creation record from Appwrite or local storage
+                if (itemToDelete.isLocal) {
+                    await deleteLocalCreation(storyIdToDelete);
+                } else {
                     if (itemToDelete.story.cover_image_id) {
                         await deleteImageFile(itemToDelete.story.cover_image_id);
                     }
-                    await databases.deleteDocument(databaseId, storiesCollectionId, itemToDelete.story.$id);
+                    await databases.deleteDocument(databaseId, storiesCollectionId, storyIdToDelete);
+                }
+
+                // 3. Clean up the image path mapping and the local file itself
+                if (imagePathToDelete) {
+                    await disassociateImagePath(storyIdToDelete);
+                    await FileSystem.deleteAsync(imagePathToDelete, { idempotent: true });
                 }
                 
                 Alert.alert("Success", "Creation and all associated history deleted.");
-                setCreations(prev => prev.filter(c => c.story.$id !== itemToDelete.story.$id));
-                setHistory(prev => prev.filter(h => h.story.$id !== itemToDelete.story.$id));
+                setCreations((prev: StorySession[]) => prev.filter((c: StorySession) => c.story.$id !== storyIdToDelete));
+                setHistory((prev: StorySession[]) => prev.filter((h: StorySession) => h.story.$id !== storyIdToDelete));
 
             } else if (deleteType === 'History') {
-                // Deleting a History session: This only removes one playthrough.
+                // This is now safe. It only deletes the session, not the image.
                 await deleteStorySession(itemToDelete.sessionId);
                 Alert.alert("Success", "History session deleted.");
-                setHistory(prev => prev.filter(h => h.sessionId !== itemToDelete.sessionId));
+                setHistory((prev: StorySession[]) => prev.filter((h: StorySession) => h.sessionId !== itemToDelete.sessionId));
             }
         } catch (error) {
             console.error(`Failed to delete ${deleteType}:`, error);

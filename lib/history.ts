@@ -4,10 +4,94 @@ import { GenerationConfig, PlayerData, StoryDocument, StoryEntry, StorySession }
 import { downloadAndSaveImage, ID } from './appwrite';
 
 const HISTORY_KEY = 'story_history';
+const LOCAL_CREATIONS_KEY = 'local_creations';
+const STORY_IMAGE_PATHS_KEY = 'story_image_paths'; // New key for the image path map
+
+// --- New Functions for Managing the Story -> Image Path Map ---
 
 /**
- * Retrieves the list of all story sessions from local history.
+ * Retrieves the map of story IDs to local image file paths.
  */
+export const getStoryImagePaths = async (): Promise<Record<string, string>> => {
+    try {
+        const jsonValue = await AsyncStorage.getItem(STORY_IMAGE_PATHS_KEY);
+        return jsonValue != null ? JSON.parse(jsonValue) : {};
+    } catch (e) {
+        console.error("Failed to load story image paths.", e);
+        return {};
+    }
+};
+
+/**
+ * Saves the map of story IDs to local image file paths.
+ */
+const saveStoryImagePaths = async (paths: Record<string, string>) => {
+    try {
+        const jsonValue = JSON.stringify(paths);
+        await AsyncStorage.setItem(STORY_IMAGE_PATHS_KEY, jsonValue);
+    } catch (e) {
+        console.error("Failed to save story image paths.", e);
+    }
+};
+
+/**
+ * Associates a local image path with a story ID.
+ */
+const associateImagePath = async (storyId: string, path: string) => {
+    const paths = await getStoryImagePaths();
+    paths[storyId] = path;
+    await saveStoryImagePaths(paths);
+};
+
+/**
+ * Removes the image path association for a story ID.
+ */
+export const disassociateImagePath = async (storyId: string) => {
+    const paths = await getStoryImagePaths();
+    delete paths[storyId];
+    await saveStoryImagePaths(paths);
+};
+
+
+// --- Functions for Managing Local Creations (Unchanged) ---
+export const getLocalCreations = async (): Promise<StoryDocument[]> => {
+    try {
+        const jsonValue = await AsyncStorage.getItem(LOCAL_CREATIONS_KEY);
+        return jsonValue != null ? JSON.parse(jsonValue) : [];
+    } catch (e) {
+        console.error("Failed to load local creations.", e);
+        return [];
+    }
+};
+
+const saveLocalCreations = async (creations: StoryDocument[]) => {
+    try {
+        const jsonValue = JSON.stringify(creations);
+        await AsyncStorage.setItem(LOCAL_CREATIONS_KEY, jsonValue);
+    } catch (e) {
+        console.error("Failed to save local creations.", e);
+    }
+};
+
+const addLocalCreation = async (story: StoryDocument) => {
+    if (!story.isLocal) return;
+    const creations = await getLocalCreations();
+    const exists = creations.some(c => c.$id === story.$id);
+    if (!exists) {
+        const { localCoverImageBase64, ...storyToSave } = story;
+        const updatedCreations = [...creations, storyToSave];
+        await saveLocalCreations(updatedCreations);
+    }
+};
+
+export const deleteLocalCreation = async (storyId: string) => {
+    let creations = await getLocalCreations();
+    creations = creations.filter(c => c.$id !== storyId);
+    await saveLocalCreations(creations);
+};
+
+// --- History Functions (Modified) ---
+
 export const getStoryHistory = async (): Promise<StorySession[]> => {
     try {
         const jsonValue = await AsyncStorage.getItem(HISTORY_KEY);
@@ -22,9 +106,6 @@ export const getStoryHistory = async (): Promise<StorySession[]> => {
     }
 };
 
-/**
- * Retrieves a single story session by its unique session ID.
- */
 export const getStorySession = async (sessionId: string): Promise<StorySession | null> => {
     try {
         const history = await getStoryHistory();
@@ -36,55 +117,46 @@ export const getStorySession = async (sessionId: string): Promise<StorySession |
     }
 };
 
-export const updateStoryInSession = async (sessionId: string, updatedStory: StoryDocument) => {
-  try {
-    const history = await getStoryHistory();
-    const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
-
-    if (sessionIndex !== -1) {
-      history[sessionIndex].story = updatedStory;
-      history[sessionIndex].sessionDate = new Date().toISOString();
-      await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-      return true;
-    }
-    return false;
-  } catch (e) {
-    console.error("Failed to update story in session:", e);
-    return false;
-  }
-};
-
 /**
- * Creates a new, unique session for a story and saves it to local storage.
- * MODIFIED: This function now preserves the existing image path when creating a new session for the same story.
+ * Creates a new, unique session for a story.
+ * MODIFIED: Now saves the image path to our new lookup map.
  */
 export const createNewSession = async (story: StoryDocument): Promise<StorySession> => {
     const history = await getStoryHistory();
     const storyToSave = { ...story };
 
-    // Find if an older session for this story exists to reuse its image path.
-    const existingSession = history.find(s => s.story.$id === story.$id);
-    let localCoverImagePath: string | null = existingSession?.localCoverImagePath || null;
+    if (storyToSave.isLocal) {
+        await addLocalCreation(storyToSave);
+    }
 
-    // Only download or save a new image if one doesn't already exist locally.
+    const imagePaths = await getStoryImagePaths();
+    let localCoverImagePath: string | null = imagePaths[story.$id] || null;
+
     if (!localCoverImagePath) {
+        let newLocalUri: string | null = null;
         if (storyToSave.localCoverImageBase64) {
             try {
                 const newFileName = `${ID.unique()}.png`;
-                const newLocalUri = FileSystem.documentDirectory + newFileName;
+                newLocalUri = FileSystem.documentDirectory + newFileName;
                 await FileSystem.writeAsStringAsync(newLocalUri, storyToSave.localCoverImageBase64, {
                     encoding: FileSystem.EncodingType.Base64,
                 });
-                localCoverImagePath = newLocalUri;
-                delete storyToSave.localCoverImageBase64; 
             } catch (e) {
                 console.error("Failed to save local base64 image:", e);
+                newLocalUri = null;
             }
         } 
         else if (storyToSave.cover_image_id) {
-            localCoverImagePath = await downloadAndSaveImage(storyToSave.cover_image_id);
+            newLocalUri = await downloadAndSaveImage(storyToSave.cover_image_id);
+        }
+
+        if (newLocalUri) {
+            localCoverImagePath = newLocalUri;
+            await associateImagePath(story.$id, newLocalUri); // Persist the new path
         }
     }
+    
+    delete storyToSave.localCoverImageBase64;
 
     const newSession: StorySession = {
         story: storyToSave,
@@ -93,11 +165,7 @@ export const createNewSession = async (story: StoryDocument): Promise<StorySessi
         sessionDate: new Date().toISOString(),
         playerData: {},
         localCoverImagePath: localCoverImagePath || undefined,
-        generationConfig: {
-            temperature: 0.8,
-            topP: 0.9,
-            maxOutputTokens: 200,
-        },
+        generationConfig: { temperature: 0.8, topP: 0.9, maxOutputTokens: 200 },
         isLocal: storyToSave.isLocal,
     };
     const updatedHistory = [newSession, ...history];
@@ -106,8 +174,41 @@ export const createNewSession = async (story: StoryDocument): Promise<StorySessi
 };
 
 /**
- * Saves the current chat content for a specific story session.
+ * Deletes a story session from history.
+ * MODIFIED: This function is now much simpler. It NO LONGER deletes image files.
+ * Image file cleanup is handled separately when a whole creation is deleted.
  */
+export const deleteStorySession = async (sessionId: string) => {
+    try {
+        const history = await getStoryHistory();
+        const updatedHistory = history.filter(session => session.sessionId !== sessionId);
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
+    } catch (e) {
+        console.error("Failed to delete story session.", e);
+    }
+};
+
+
+// --- Other session update functions (unchanged) ---
+
+export const updateStoryInSession = async (sessionId: string, updatedStory: StoryDocument) => {
+    try {
+      const history = await getStoryHistory();
+      const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
+  
+      if (sessionIndex !== -1) {
+        history[sessionIndex].story = updatedStory;
+        history[sessionIndex].sessionDate = new Date().toISOString();
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error("Failed to update story in session:", e);
+      return false;
+    }
+  };
+
 export const saveStorySessionContent = async (sessionId: string, content: StoryEntry[]) => {
     try {
         const history = await getStoryHistory();
@@ -123,9 +224,6 @@ export const saveStorySessionContent = async (sessionId: string, content: StoryE
     }
 };
 
-/**
- * Saves player data for a specific story session.
- */
 export const saveSessionPlayerData = async (sessionId: string, playerData: PlayerData) => {
     try {
         const history = await getStoryHistory();
@@ -141,9 +239,6 @@ export const saveSessionPlayerData = async (sessionId: string, playerData: Playe
     }
 };
 
-/**
- * Saves the generation config for a specific story session.
- */
 export const updateSessionGenerationConfig = async (sessionId: string, config: GenerationConfig) => {
     try {
         const history = await getStoryHistory();
@@ -158,34 +253,20 @@ export const updateSessionGenerationConfig = async (sessionId: string, config: G
     }
 };
 
-
 export const updateSessionCoverImage = async (sessionId: string, newImagePath: string | null) => {
     try {
         const history = await getStoryHistory();
         const sessionIndex = history.findIndex(s => s.sessionId === sessionId);
 
         if (sessionIndex !== -1) {
+            const storyId = history[sessionIndex].story.$id;
+            if (newImagePath) {
+                await associateImagePath(storyId, newImagePath);
+            }
             history[sessionIndex].localCoverImagePath = newImagePath || undefined;
             await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-            console.log(`Updated cover image for session ${sessionId}`);
         }
     } catch (e) {
         console.error("Failed to update session cover image.", e);
-    }
-};
-
-export const deleteStorySession = async (sessionId: string) => {
-    try {
-        const history = await getStoryHistory();
-        const sessionToDelete = history.find(session => session.sessionId === sessionId);
-        
-        if (sessionToDelete && sessionToDelete.localCoverImagePath) {
-            await FileSystem.deleteAsync(sessionToDelete.localCoverImagePath, { idempotent: true });
-        }
-
-        const updatedHistory = history.filter(session => session.sessionId !== sessionId);
-        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
-    } catch (e) {
-        console.error("Failed to delete story session.", e);
     }
 };
