@@ -90,30 +90,13 @@ Description: ${details.description}`;
 
 /**
  * The main handler for the quick start process.
- * MODIFIED: This function now creates a local-only story session.
  */
 export async function handleQuickStart(
     genre: string, 
-    p2: string | Models.User<Models.Preferences>, 
-    p3: Models.User<Models.Preferences> | { push: (href: Href) => void; }, 
-    p4?: { push: (href: Href) => void; }
+    tag: string, 
+    user: Models.User<Models.Preferences>, 
+    router: { push: (href: Href) => void; }
 ) {
-    let tag: string;
-    let user: Models.User<Models.Preferences>;
-    let router: { push: (href: Href) => void; };
-
-    if (typeof p2 === 'string') {
-        tag = p2;
-        user = p3 as Models.User<Models.Preferences>;
-        router = p4!;
-    } else {
-        user = p2 as Models.User<Models.Preferences>;
-        router = p3 as { push: (href: Href) => void; };
-        tag = genre;
-        if (genre === "Modern Day Drama") tag = "Drama, 21st Century";
-        if (genre === "Medieval Drama") tag = "Drama, Medieval Times";
-    }
-
     if (!user || !user.$id) {
         Alert.alert("Error", "You must be logged in to create a story.");
         return;
@@ -134,23 +117,24 @@ export async function handleQuickStart(
         console.error("Quick Start image generation failed, proceeding without image:", error);
     }
 
-    // MODIFIED: Construct a local StoryDocument object instead of saving to a database.
+    // MODIFIED: Set character questions based on genre
+    const isRomance = genre === 'Romance';
+
     const storyData: StoryDocument = {
         ...storyDetails,
         tags: tag,
         ai_instruction: DEFAULT_AI_INSTRUCTIONS,
-        ask_user_name: false,
-        ask_user_age: false,
-        ask_user_gender: false,
+        ask_user_name: isRomance,
+        ask_user_age: isRomance,
+        ask_user_gender: isRomance,
         userId: user.$id,
-        $id: ID.unique(), // Generate a unique local ID
+        $id: ID.unique(),
         $createdAt: new Date().toISOString(),
-        isLocal: true, // Flag this as a local-only story
+        isLocal: true,
         localCoverImageBase64: base64Image || undefined,
     };
 
     try {
-        // MODIFIED: Create a new session in local storage directly.
         const newSession = await createNewSession(storyData);
         
         router.push({

@@ -10,7 +10,8 @@ import { handleQuickStart } from '../../lib/quickstart';
 import { StoryDocument } from '../types/story';
 
 // --- Genre Selection Modal ---
-const GENRES = ["Adventure", "Horror", "Modern Day Drama", "Medieval Drama", "Action", "Sci-fi", "Fairy Tale"];
+// MODIFIED: Added "Romance" to the list of genres
+const GENRES = ["Adventure", "Horror", "Modern Day Drama", "Medieval Drama", "Action", "Sci-fi", "Fairy Tale", "Romance"];
 
 type QuickStartModalProps = {
   visible: boolean;
@@ -96,7 +97,6 @@ export default function HomeScreen() {
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  // MODIFIED: State for random pagination
   const [shuffledIds, setShuffledIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
 
@@ -105,7 +105,6 @@ export default function HomeScreen() {
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // --- New function to fetch a specific page of stories from a list of IDs ---
   const fetchPageByIds = async (page: number, ids: string[]) => {
     const idSlice = ids.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
@@ -118,10 +117,8 @@ export default function HomeScreen() {
         const response = await databases.listDocuments(databaseId, storiesCollectionId, [Query.equal('$id', idSlice)]);
         const newDocs = response.documents as StoryDocument[];
 
-        // Re-order the fetched documents to match the shuffled ID order
         const orderedDocs = idSlice.map(id => newDocs.find(doc => doc.$id === id)).filter(Boolean) as StoryDocument[];
 
-        // FIX: Ensure no duplicate stories are added to the state
         setStories(prev => {
             const existingIds = new Set(prev.map(s => s.$id));
             const uniqueNewDocs = orderedDocs.filter(doc => !existingIds.has(doc.$id));
@@ -137,7 +134,6 @@ export default function HomeScreen() {
     }
   };
   
-  // --- Modified fetch function to handle random sorting ---
   const fetchStories = async (refresh = false) => {
     if (isFetchingMore || (!refresh && !hasMore)) return;
 
@@ -146,11 +142,9 @@ export default function HomeScreen() {
     if (refresh) {
         setIsRefreshing(true);
         try {
-            // On refresh, get all story IDs, shuffle them, then fetch the first page
             const idResponse = await databases.listDocuments(databaseId, storiesCollectionId, [Query.limit(5000), Query.select(['$id'])]);
             const ids = idResponse.documents.map(doc => doc.$id);
 
-            // Fisher-Yates shuffle algorithm
             for (let i = ids.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [ids[i], ids[j]] = [ids[j], ids[i]];
@@ -159,7 +153,7 @@ export default function HomeScreen() {
             setShuffledIds(ids);
             setCurrentPage(0);
             setHasMore(true);
-            setStories([]); // Clear existing stories
+            setStories([]);
             
             await fetchPageByIds(0, ids);
 
@@ -173,7 +167,6 @@ export default function HomeScreen() {
             setIsInitialLoading(false);
         }
     } else {
-        // On scroll, fetch the next page from the existing shuffled list
         const nextPage = currentPage + 1;
         await fetchPageByIds(nextPage, shuffledIds);
         setCurrentPage(nextPage);
@@ -201,11 +194,14 @@ export default function HomeScreen() {
     setQuickStartModalVisible(false);
     if (!user) return;
 
+    // MODIFIED: Added "Romance" to the tag mapping logic
     let tag = genre;
     if (genre === "Modern Day Drama") {
         tag = "Drama, 21st Century";
     } else if (genre === "Medieval Drama") {
         tag = "Drama, Medieval Times";
+    } else if (genre === "Romance") {
+        tag = "Romance, Drama";
     }
 
     setIsGenerating(true);

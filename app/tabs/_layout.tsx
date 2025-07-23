@@ -6,7 +6,8 @@ import { useAuth } from '../../context/AuthContext';
 import { handleQuickStart } from '../../lib/quickstart';
 
 // --- Genre Selection Modal ---
-const GENRES = ["Adventure", "Horror", "Modern Day Drama", "Medieval Drama", "Action", "Sci-fi", "Fairy Tale"];
+// MODIFIED: Added "Romance" to the genre list
+const GENRES = ["Adventure", "Horror", "Modern Day Drama", "Medieval Drama", "Action", "Sci-fi", "Fairy Tale", "Romance"];
 
 type QuickStartModalProps = {
   visible: boolean;
@@ -47,9 +48,6 @@ type PlayButtonModalProps = {
 
 const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProps) => {
   const router = useRouter();
-  // FIX: Swapped the order of router.push() and onClose().
-  // This prevents a race condition where updating the modal's state
-  // interferes with the navigation action.
   const handleNavigate = (path: '/create-story' | '/tabs/profile') => {
     router.push(path);
     onClose();
@@ -98,8 +96,19 @@ export default function TabsLayout() {
   const onGenreSelect = async (genre: string) => {
     setQuickStartModalVisible(false);
     if (!user) return;
+
+    // MODIFIED: Added logic to determine the tag and pass all 4 arguments
+    let tag = genre;
+    if (genre === "Modern Day Drama") {
+        tag = "Drama, 21st Century";
+    } else if (genre === "Medieval Drama") {
+        tag = "Drama, Medieval Times";
+    } else if (genre === "Romance") {
+        tag = "Romance, Drama";
+    }
+
     setIsGenerating(true);
-    await handleQuickStart(genre, user, router);
+    await handleQuickStart(genre, tag, user, router);
     setIsGenerating(false);
   };
 
