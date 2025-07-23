@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
-import { handleSimplifiedCreation } from '../lib/generation';
+import * as generation from '../lib/generation';
 import { PlayerData } from './types/story';
 
 type MainCharacterChoice = 'yes' | 'no' | null;
@@ -15,13 +15,31 @@ export default function GenerateCreationScreen() {
     const [isMainCharacter, setIsMainCharacter] = useState<MainCharacterChoice>(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [dropdownVisible, setDropdownVisible] = useState(false);
-    const [playerData, setPlayerData] = useState<PlayerData | undefined>(undefined);
     const [characterModalVisible, setCharacterModalVisible] = useState(false);
 
     const { user } = useAuth();
     const router = useRouter();
 
-    const handleCreate = async () => {
+    // MODIFIED: Centralized the generation logic into a single function to prevent double calls.
+    const startGeneration = async (characterData?: PlayerData) => {
+        if (!user) return; // Should be checked before calling, but for safety.
+        
+        setIsGenerating(true);
+        await generation.handleSimplifiedCreation(
+            title,
+            description,
+            isMainCharacter === 'yes',
+            user,
+            router,
+            characterData
+        );
+        setIsGenerating(false);
+    };
+
+    // MODIFIED: This function now either starts generation directly or opens the character modal.
+    const handleCreate = () => {
+        if (isGenerating) return; // Prevent multiple clicks while generating
+
         if (!title.trim() || !description.trim() || !isMainCharacter) {
             Alert.alert('Missing Information', 'Please fill out all fields before creating the story.');
             return;
@@ -31,31 +49,20 @@ export default function GenerateCreationScreen() {
             return;
         }
 
-        if (isMainCharacter === 'yes' && !playerData) {
+        if (isMainCharacter === 'yes') {
+            // If the user is the main character, we need their details first.
             setCharacterModalVisible(true);
-            return;
+        } else {
+            // Otherwise, we can start generating the story right away without character data.
+            startGeneration();
         }
-
-        setIsGenerating(true);
-        await handleSimplifiedCreation(
-            title,
-            description,
-            isMainCharacter === 'yes',
-            user,
-            router,
-            playerData
-        );
-        setIsGenerating(false);
     };
     
+    // MODIFIED: This function now only calls the centralized generation function once it has the character data.
     const onCharacterComplete = (data: PlayerData) => {
-        setPlayerData(data);
         setCharacterModalVisible(false);
-        // We need to trigger handleCreate again now that we have player data
-        // Using a timeout to allow the modal to close before starting generation
-        setTimeout(() => {
-            handleSimplifiedCreation(title, description, true, user!, router, data).finally(() => setIsGenerating(false));
-        }, 100);
+        // Now that we have the character data, we can start the generation.
+        startGeneration(data);
     };
 
 
@@ -71,7 +78,7 @@ export default function GenerateCreationScreen() {
                         <TouchableOpacity style={styles.dropdownOption} onPress={() => { setIsMainCharacter('yes'); setDropdownVisible(false); }}>
                             <Text style={styles.dropdownOptionText}>Yes</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.dropdownOption} onPress={() => { setIsMainCharacter('no'); setDropdownVisible(false); setPlayerData(undefined); }}>
+                        <TouchableOpacity style={styles.dropdownOption} onPress={() => { setIsMainCharacter('no'); setDropdownVisible(false); }}>
                             <Text style={styles.dropdownOptionText}>No</Text>
                         </TouchableOpacity>
                     </View>

@@ -3,7 +3,10 @@ import { Href } from 'expo-router';
 import { Alert } from 'react-native';
 import { PlayerData, StoryDocument } from '../app/types/story';
 import { ID } from './appwrite';
-import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
+// MODIFIED: Removed generateStoryContinuation as it's no longer needed
+import * as FileSystem from 'expo-file-system';
+import { generateImageFromPrompt } from './gemini';
+import { associateImagePath } from './history';
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -38,20 +41,20 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
         },
         required: ["title", "description", "opening", "story_summary", "plot_essentials"]
     };
-    const prompt = `You are a Creative story teller, Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. The story must be tailored for the following player character:
+    const prompt = `Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. The story must be tailored for the following player character:
     - Name: ${playerData.name}
     - Gender: ${playerData.gender}
     - Age: ${playerData.age}
 
     Provide a title, a short description, an exciting opening scene for the player, a brief summary of the overall story, and 2-3 essential plot points for the AI to remember. The story should revolve around the player's character.
     
-    Crucially, the 'description' and 'opening' fields must be written in the second person, addressing the player directly as 'You'. This is to create an immersive experience where the player feels they are the main character.
-
+    Crucially, the 'description' and 'opening' fields must be written in the second person, addressing the player directly as 'You'.
+    
     Respond with only a valid JSON object that conforms to the following schema: ${JSON.stringify(schema)}`;
 
     try {
         const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
         const response = await fetch(API_URL, {
             method: 'POST',
@@ -60,8 +63,8 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { 
                     responseMimeType: "application/json",
-                    temperature: 1.0,
-                    topP: 0.5
+                    temperature: 0.8,
+                    topP: 0.9
                 }
             })
         });
@@ -77,34 +80,13 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
 
 /**
  * Generates a high-quality, concise image prompt from story details.
+ * MODIFIED: This function now directly constructs the prompt in a single step.
  */
-async function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string, playerData: PlayerData): Promise<string> {
-    const prompt = `You are a creative assistant. Based on the following story and character details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
-
-Story Title: ${details.title}
-Genre: ${genre}
-Description: ${details.description}
-
-Character Details:
-- Name: ${playerData.name}
-- Gender: ${playerData.gender}
-- Age: ${playerData.age}
-
-Ensure the character depicted in the image accurately reflects these details, especially their age.`;
-
-    try {
-        const imagePrompt = await generateStoryContinuation(
-            {} as StoryDocument,
-            [],
-            { temperature: 0.7, topP: 1.0, maxOutputTokens: 100 },
-            undefined,
-            prompt
-        );
-        return imagePrompt || `${details.title}, ${genre}, vibrant anime style, ${playerData.gender} character aged ${playerData.age}, epic scene, cinematic lighting`;
-    } catch (error) {
-        console.error("Failed to generate image prompt, using fallback:", error);
-        return `${details.title}, ${genre}, vibrant anime style, ${playerData.gender} character aged ${playerData.age}, epic scene, cinematic lighting`;
-    }
+function generateImagePromptFromStory(details: GeneratedStoryDetails, genre: string, playerData: PlayerData): string {
+    const characterDescription = `${playerData.gender} character aged ${playerData.age}`;
+    const prompt = `${details.title}, ${characterDescription}, based on the description: "${details.description}", ${genre}, vibrant anime style, epic scene, cinematic lighting`;
+    console.log("Generating image with prompt:", prompt); // For debugging
+    return prompt;
 }
 
 
@@ -130,12 +112,24 @@ export async function handleQuickStart(
         return;
     }
 
+    const storyId = ID.unique();
     let base64Image: string | null = null;
+
     try {
-        const imagePrompt = await generateImagePromptFromStory(storyDetails, genre, playerData);
+        // MODIFIED: This now uses the simplified, single-step prompt generation.
+        const imagePrompt = generateImagePromptFromStory(storyDetails, genre, playerData);
         base64Image = await generateImageFromPrompt(imagePrompt);
+
+        if (base64Image) {
+            const newFileName = `${storyId}.png`;
+            const newLocalUri = FileSystem.documentDirectory + newFileName;
+            await FileSystem.writeAsStringAsync(newLocalUri, base64Image, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+            await associateImagePath(storyId, newLocalUri);
+        }
     } catch (error) {
-        console.error("Quick Start image generation failed, proceeding without image:", error);
+        console.error("Quick Start image generation/saving failed:", error);
     }
 
     const storyData: StoryDocument = {
@@ -146,10 +140,9 @@ export async function handleQuickStart(
         ask_user_age: false,
         ask_user_gender: false,
         userId: user.$id,
-        $id: ID.unique(),
+        $id: storyId,
         $createdAt: new Date().toISOString(),
         isLocal: true,
-        localCoverImageBase64: base64Image || undefined,
     };
 
     router.push({

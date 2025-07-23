@@ -1,9 +1,11 @@
 import { Models } from 'appwrite';
+import * as FileSystem from 'expo-file-system';
 import { Href } from 'expo-router';
 import { Alert } from 'react-native';
 import { PlayerData, StoryDocument } from '../app/types/story';
 import { ID } from './appwrite';
-import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
+import { generateImageFromPrompt } from './gemini';
+import { associateImagePath } from './history';
 
 // --- Constants ---
 export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
@@ -25,11 +27,13 @@ type GeneratedStoryDetails = {
 
 /**
  * Generates full story details from a user's title and description.
+ * MODIFIED: Now accepts PlayerData to tailor the story to the character.
  */
 async function generateStoryFromUserInput(
     title: string,
     userDescription: string,
-    isMainCharacter: boolean
+    isMainCharacter: boolean,
+    playerData?: PlayerData
 ): Promise<GeneratedStoryDetails | null> {
     const schema = {
         type: "OBJECT",
@@ -43,6 +47,14 @@ async function generateStoryFromUserInput(
         required: ["description", "tags", "opening", "story_summary", "plot_essentials"]
     };
 
+    let characterInfo = '';
+    if (isMainCharacter && playerData) {
+        characterInfo = `The story must be tailored for the following player character:
+    - Name: ${playerData.name}
+    - Gender: ${playerData.gender}
+    - Age: ${playerData.age}`;
+    }
+
     const narrativePerspective = isMainCharacter
         ? 'second person (addressing the player as "You")'
         : 'third person (describing a character, for example as "he" or "she")';
@@ -51,6 +63,7 @@ async function generateStoryFromUserInput(
     
     User's Title: "${title}"
     User's Description: "${userDescription}"
+    ${characterInfo}
 
     Your task is to expand on this. Generate the following fields:
     1.  'description': A more polished, engaging version of the user's description.
@@ -91,50 +104,25 @@ async function generateStoryFromUserInput(
 
 /**
  * Generates an image prompt from the AI-generated story details.
- * MODIFIED: Now accepts optional PlayerData to create a more specific prompt.
  */
-async function generateImagePromptFromGeneratedStory(
+function generateImagePromptFromGeneratedStory(
     details: GeneratedStoryDetails,
     title: string,
     playerData?: PlayerData
-): Promise<string> {
-    let characterInfo = '';
-    // If player data is provided, add it to the prompt
+): string {
+    let characterDescription = '';
     if (playerData && playerData.name && playerData.gender && playerData.age) {
-        characterInfo = `
-The main character should be depicted according to these details:
-- Gender: ${playerData.gender}
-- Age: Approximately ${playerData.age} years old
-
-Ensure the character depicted in the image accurately reflects these details.`;
+        characterDescription = `, a ${playerData.gender} character named ${playerData.name} aged ${playerData.age}`;
     }
-
-    const prompt = `You are a creative assistant. Based on the following story details, generate a short, visually descriptive prompt for an AI image generator. The prompt should capture the essence of the story in a single, compelling scene. The final image must be in a vibrant "Anime Style".
-
-Story Title: ${title}
-Tags: ${details.tags}
-Description: ${details.description}
-${characterInfo}`;
-
-    try {
-        const imagePrompt = await generateStoryContinuation(
-            {} as StoryDocument,
-            [],
-            { temperature: 0.7, topP: 1.0, maxOutputTokens: 100 },
-            undefined,
-            prompt
-        );
-        return imagePrompt || `${title}, ${details.tags}, vibrant anime style, epic scene, cinematic lighting`;
-    } catch (error) {
-        console.error("Failed to generate image prompt, using fallback:", error);
-        return `${title}, ${details.tags}, vibrant anime style, epic scene, cinematic lighting`;
-    }
+    
+    // MODIFIED: Removed the console.log from this function to prevent double logging.
+    const prompt = `${title}${characterDescription}, ${details.tags}, based on the description: "${details.description}", vibrant anime style, epic scene, cinematic lighting`;
+    return prompt;
 }
 
 
 /**
  * The main handler for the simplified creation process.
- * MODIFIED: Now accepts optional PlayerData.
  */
 export async function handleSimplifiedCreation(
     title: string,
@@ -149,35 +137,44 @@ export async function handleSimplifiedCreation(
         return;
     }
 
-    const storyDetails = await generateStoryFromUserInput(title, userDescription, isMainCharacter);
+    // MODIFIED: Pass the playerData to the story generation function.
+    const storyDetails = await generateStoryFromUserInput(title, userDescription, isMainCharacter, playerData);
 
     if (!storyDetails) {
         Alert.alert("Generation Failed", "The AI could not create a story. Please try again.");
         return;
     }
 
+    const storyId = ID.unique();
     let base64Image: string | null = null;
+    
     try {
-        // Pass the optional player data to the image prompt generator
-        const imagePrompt = await generateImagePromptFromGeneratedStory(storyDetails, title, playerData);
+        const imagePrompt = generateImagePromptFromGeneratedStory(storyDetails, title, playerData);
         base64Image = await generateImageFromPrompt(imagePrompt);
+
+        if (base64Image) {
+            const newFileName = `${storyId}.png`;
+            const newLocalUri = FileSystem.documentDirectory + newFileName;
+            await FileSystem.writeAsStringAsync(newLocalUri, base64Image, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+            await associateImagePath(storyId, newLocalUri);
+        }
     } catch (error) {
-        console.error("Simplified creation image generation failed, proceeding without image:", error);
+        console.error("Simplified creation image generation/saving failed:", error);
     }
 
     const storyData: StoryDocument = {
         title,
         ...storyDetails,
         ai_instruction: DEFAULT_AI_INSTRUCTIONS,
-        // If player data was provided, we don't need to ask again.
         ask_user_name: isMainCharacter && !playerData,
         ask_user_age: isMainCharacter && !playerData,
         ask_user_gender: isMainCharacter && !playerData,
         userId: user.$id,
-        $id: ID.unique(),
+        $id: storyId,
         $createdAt: new Date().toISOString(),
         isLocal: true,
-        localCoverImageBase64: base64Image || undefined,
     };
 
     router.push({
@@ -185,7 +182,6 @@ export async function handleSimplifiedCreation(
         params: { 
             sessionId: storyData.$id, 
             story: JSON.stringify(storyData),
-            // Pass player data to the intro screen if it exists
             ...(playerData && { playerData: JSON.stringify(playerData) })
         }
     });
