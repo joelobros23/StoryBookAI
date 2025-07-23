@@ -39,7 +39,7 @@ const QuickStartModal = ({ visible, onClose, onSelectGenre }: QuickStartModalPro
     </Modal>
 );
 
-// --- NEW: Character Creation Modal ---
+// --- Character Creation Modal ---
 type CharacterCreationModalProps = {
     visible: boolean;
     onClose: () => void;
@@ -81,7 +81,6 @@ const CharacterCreationModal = ({ visible, onClose, onComplete }: CharacterCreat
     );
 };
 
-// --- Step Components (for the new modal) ---
 const NameStep = ({ onComplete }: { onComplete: (name: string) => void }) => {
     const [name, setName] = useState('');
     return (
@@ -115,16 +114,47 @@ const AgeStep = ({ onComplete }: { onComplete: (age: string) => void }) => {
     );
 };
 
+// --- MODIFIED: New Modal for Creation Choice ---
+type CreationChoiceModalProps = {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (choice: 'simplified' | 'advanced') => void;
+};
+
+const CreationChoiceModal = ({ visible, onClose, onSelect }: CreationChoiceModalProps) => (
+    <Modal animationType="slide" transparent={true} visible={visible} onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback>
+            <View style={styles.modalContent}>
+              <TouchableOpacity style={styles.modalOption} onPress={() => onSelect('simplified')}>
+                <Feather name="edit-3" size={24} color="#FFFFFF" />
+                <Text style={styles.modalOptionText}>Simplified Creation</Text>
+              </TouchableOpacity>
+              <View style={styles.separator} />
+              <TouchableOpacity style={styles.modalOption} onPress={() => onSelect('advanced')}>
+                <Feather name="sliders" size={24} color="#FFFFFF" />
+                <Text style={styles.modalOptionText}>Advanced Creation</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+);
+
+
 // --- Main Play Button Modal ---
 type PlayButtonModalProps = {
   visible: boolean;
   onClose: () => void;
   onQuickStart: () => void;
+  onCreateStory: () => void; // MODIFIED
 };
 
-const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProps) => {
+const PlayButtonModal = ({ visible, onClose, onQuickStart, onCreateStory }: PlayButtonModalProps) => {
   const router = useRouter();
-  const handleNavigate = (path: '/create-story' | '/tabs/profile') => {
+  const handleNavigate = (path: '/tabs/profile') => {
     router.push(path);
     onClose();
   };
@@ -139,7 +169,7 @@ const PlayButtonModal = ({ visible, onClose, onQuickStart }: PlayButtonModalProp
                 <Text style={styles.modalOptionText}>Quick Start</Text>
               </TouchableOpacity>
               <View style={styles.separator} />
-              <TouchableOpacity style={styles.modalOption} onPress={() => handleNavigate('/create-story')}>
+              <TouchableOpacity style={styles.modalOption} onPress={onCreateStory}>
                 <Feather name="plus-circle" size={24} color="#FFFFFF" />
                 <Text style={styles.modalOptionText}>Create Story</Text>
               </TouchableOpacity>
@@ -161,6 +191,7 @@ export default function TabsLayout() {
   const [playModalVisible, setPlayModalVisible] = useState(false);
   const [quickStartModalVisible, setQuickStartModalVisible] = useState(false);
   const [characterModalVisible, setCharacterModalVisible] = useState(false);
+  const [creationChoiceModalVisible, setCreationChoiceModalVisible] = useState(false); // MODIFIED
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const { user } = useAuth();
@@ -169,6 +200,20 @@ export default function TabsLayout() {
   const openQuickStart = () => {
     setPlayModalVisible(false);
     setQuickStartModalVisible(true);
+  };
+
+  const openCreateStoryChoice = () => {
+    setPlayModalVisible(false);
+    setCreationChoiceModalVisible(true);
+  };
+
+  const onCreationChoiceSelect = (choice: 'simplified' | 'advanced') => {
+    setCreationChoiceModalVisible(false);
+    if (choice === 'simplified') {
+        router.push('/generate-creation');
+    } else {
+        router.push('/create-story');
+    }
   };
 
   const onGenreSelect = (genre: string) => {
@@ -210,7 +255,8 @@ export default function TabsLayout() {
         <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ color }) => <Feather name="user" size={28} color={color} /> }} />
       </Tabs>
       
-      <PlayButtonModal visible={playModalVisible} onClose={() => setPlayModalVisible(false)} onQuickStart={openQuickStart} />
+      <PlayButtonModal visible={playModalVisible} onClose={() => setPlayModalVisible(false)} onQuickStart={openQuickStart} onCreateStory={openCreateStoryChoice} />
+      <CreationChoiceModal visible={creationChoiceModalVisible} onClose={() => setCreationChoiceModalVisible(false)} onSelect={onCreationChoiceSelect} />
       <QuickStartModal visible={quickStartModalVisible} onClose={() => setQuickStartModalVisible(false)} onSelectGenre={onGenreSelect} />
       <CharacterCreationModal visible={characterModalVisible} onClose={() => setCharacterModalVisible(false)} onComplete={onCharacterComplete} />
 
