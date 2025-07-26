@@ -8,7 +8,7 @@ import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
 import { associateImagePath } from './history';
 
 // --- Constants ---
-export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
+export const DEFAULT_AI_INSTRUCTIONS = `You are a Great Novel or Story Writter that provides any kind of roleplaying game content.
 
 Instructions: 
 - Be specific, descriptive, and creative. 
@@ -58,7 +58,7 @@ async function generateStoryFromUserInput(
         ? 'second person (addressing the player as "You")'
         : 'third person (describing a character, for example as "he" or "she")';
 
-    const prompt = `Generate a complete, ready-to-play story premise for a role-playing game based on the user's input.
+    const prompt = `You are a great and Creative story teller and Author. Generate a complete, ready-to-play story premise for a role-playing game based on the user's input.
     
     User's Title: "${title}"
     User's Description: "${userDescription}"
@@ -77,7 +77,7 @@ async function generateStoryFromUserInput(
 
     try {
         const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
         const response = await fetch(API_URL, {
             method: 'POST',

@@ -8,7 +8,7 @@ import { generateImageFromPrompt, generateStoryContinuation } from './gemini';
 import { associateImagePath } from './history';
 
 // --- Constants ---
-export const DEFAULT_AI_INSTRUCTIONS = `You are an AI dungeon master that provides any kind of roleplaying game content.
+export const DEFAULT_AI_INSTRUCTIONS = `You are a Great Novel or Story Writter that provides any kind of roleplaying game content.
 
 Instructions: 
 - Be specific, descriptive, and creative. 
@@ -40,7 +40,7 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
         },
         required: ["title", "description", "opening", "story_summary", "plot_essentials"]
     };
-    const prompt = `Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. The story must be tailored for the following player character:
+    const prompt = `You are a greate and Creative Story teller and Author. Generate a complete, ready-to-play story premise for a role-playing game in the '${genre}' genre. The story must be tailored for the following player character:
     - Name: ${playerData.name}
     - Gender: ${playerData.gender}
     - Age: ${playerData.age}
@@ -53,7 +53,7 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
 
     try {
         const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
         const response = await fetch(API_URL, {
             method: 'POST',
@@ -62,8 +62,8 @@ async function generateStoryDetails(genre: string, playerData: PlayerData): Prom
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { 
                     responseMimeType: "application/json",
-                    temperature: 0.8,
-                    topP: 0.9
+                    temperature: 1.0,
+                    topP: 0.5
                 }
             })
         });
