@@ -20,7 +20,7 @@
       "package": "com.joelobros23.storybookai",
       "intentFilters": [
         {
-          "action": "VIEW",
+          "action": "VIEW", 
           "data": [
             {
               "scheme": "storybookai"
