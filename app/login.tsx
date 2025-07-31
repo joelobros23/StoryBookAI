@@ -1,4 +1,4 @@
-import { AntDesign, Feather } from '@expo/vector-icons'; // Import AntDesign for Google icon
+import { Feather } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
@@ -10,8 +10,8 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Get the loginWithGoogle function from context
-  const { login, register, loginWithFacebook, loginWithGoogle } = useAuth();
+  // NEW: Get the loginWithFacebook function from context
+  const { login, register, loginWithFacebook } = useAuth();
 
   const handleAuthAction = async () => {
     if (!email || !password || (isRegistering && !name)) {
@@ -32,24 +32,13 @@ export default function LoginScreen() {
     }
   };
 
+  // NEW: Handler for the Facebook login button
   const handleFacebookLogin = async () => {
     setIsLoading(true);
     try {
       await loginWithFacebook();
     } catch (error: any) {
       Alert.alert('Facebook Login Error', error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // NEW: Handler for the Google login button
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    try {
-      await loginWithGoogle();
-    } catch (error: any) {
-      Alert.alert('Google Login Error', error.message);
     } finally {
       setIsLoading(false);
     }
@@ -92,15 +81,10 @@ export default function LoginScreen() {
         <Text style={styles.buttonText}>{isLoading ? 'Loading...' : isRegistering ? 'Register' : 'Login'}</Text>
       </TouchableOpacity>
 
+      {/* NEW: Facebook Login Button */}
       <TouchableOpacity style={styles.facebookButton} onPress={handleFacebookLogin} disabled={isLoading}>
         <Feather name="facebook" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
         <Text style={styles.buttonText}>Login with Facebook</Text>
-      </TouchableOpacity>
-      
-      {/* NEW: Google Login Button */}
-      <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin} disabled={isLoading}>
-        <AntDesign name="google" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
-        <Text style={styles.buttonText}>Login with Google</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => setIsRegistering(!isRegistering)}>
@@ -153,18 +137,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
     },
+    // NEW: Style for the Facebook button
     facebookButton: {
         backgroundColor: '#3b5998',
-        paddingVertical: 18,
-        borderRadius: 30,
-        alignItems: 'center',
-        marginTop: 15,
-        flexDirection: 'row',
-        justifyContent: 'center',
-    },
-    // NEW: Style for the Google button
-    googleButton: {
-        backgroundColor: '#DB4437',
         paddingVertical: 18,
         borderRadius: 30,
         alignItems: 'center',
