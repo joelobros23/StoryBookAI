@@ -2,17 +2,19 @@ import { useFonts } from 'expo-font';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useCallback, useEffect } from 'react';
-import {
-  StyleSheet,
-  View
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 
-// --- Best Practice: Keep the splash screen visible until we are ready to render ---
+// Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * This is the component that will consume the auth context.
+ * It MUST be a child of AuthProvider.
+ */
 const InitialLayout = () => {
+  // useAuth() hook will look for the nearest AuthProvider up the component tree.
   const { user, isLoading: isAuthLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
@@ -21,53 +23,59 @@ const InitialLayout = () => {
     'serif': require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // This effect handles redirection based on auth state.
+  // Effect to handle redirection based on authentication state
   useEffect(() => {
-    if (fontError) {
-        console.error("Font loading error:", fontError);
-    }
-
+    // Exit early if assets or auth state are not ready
     if (isAuthLoading || !fontsLoaded) {
       return;
     }
+    if (fontError) {
+        console.error("Font loading error:", fontError);
+        // You might want to handle this error, e.g., show a message
+    }
 
-    // MODIFIED: Added 'generate-creation' to the list of allowed routes.
-    // This prevents the layout from redirecting away from the new screen after navigation.
-    const allowedAppRoutes = ['tabs', 'intro', 'play', 'create-story', 'generate-creation'];
-    const inApp = segments.length > 0 && allowedAppRoutes.includes(segments[0] as string);
+    const inApp = segments.length > 0 && segments[0] !== 'login';
 
     if (user && !inApp) {
+      // Redirect authenticated users to the main app
       router.replace('/tabs');
-    }
-    else if (!user && segments[0] !== 'login') {
+    } else if (!user && inApp) {
+      // Redirect unauthenticated users to the login screen
       router.replace('/login');
     }
-
   }, [user, isAuthLoading, fontsLoaded, fontError, segments, router]);
 
-
+  // Hide the splash screen once everything is loaded
   const onLayoutRootView = useCallback(async () => {
     if (fontsLoaded && !isAuthLoading) {
       await SplashScreen.hideAsync();
     }
   }, [fontsLoaded, isAuthLoading]);
 
+  // If fonts haven't loaded or auth is still loading, return null to keep showing the splash screen
   if (!fontsLoaded || isAuthLoading) {
     return null;
   }
 
+  // Render the currently active route
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-        <Slot />
+      <Slot />
     </View>
   );
 };
 
+/**
+ * This is the root layout component for the entire app.
+ * It sets up the providers that will be available to all other components.
+ */
 export default function RootLayout() {
   return (
+    // AuthProvider provides authentication context to all children
     <AuthProvider>
       <SafeAreaProvider>
         <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+          {/* InitialLayout is a child of AuthProvider, so it can use the useAuth hook */}
           <InitialLayout />
         </SafeAreaView>
       </SafeAreaProvider>
